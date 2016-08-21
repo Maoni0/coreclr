@@ -1922,6 +1922,21 @@ FCIMPL0(int, GCInterface::GetMaxGeneration)
 }
 FCIMPLEND
 
+FCIMPL0(INT64, GCInterface::GetAllocatedBytesForCurrentThread)
+{
+    FCALL_CONTRACT;
+
+    INT64 currentAllocated = 0;
+    Thread *pThread = GetThread();
+    if (pThread)
+    {
+        alloc_context* ac = pThread->GetAllocContext();
+        currentAllocated = ac->alloc_bytes + ac->alloc_bytes_loh - (ac->alloc_limit - ac->alloc_ptr);
+    }
+
+    return currentAllocated;
+}
+FCIMPLEND
 
 /*==============================SuppressFinalize================================
 **Action: Indicate that an object's finalizer should not be run by the system
