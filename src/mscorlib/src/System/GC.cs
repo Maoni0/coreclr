@@ -390,6 +390,46 @@ namespace System {
 
         [System.Security.SecurityCritical]  // auto-generated
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static extern int _CreateHeap();
+
+        [System.Security.SecurityCritical]  // auto-generated
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static extern void _DeleteHeap(int heapId);
+
+        [System.Security.SecurityCritical]  // auto-generated
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static extern void _SetHeapOnCurrentThread(int heapId);
+
+        [System.Security.SecurityCritical]  // auto-generated
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static extern void _UnsetHeapOnCurrentThread();
+
+        [System.Security.SecuritySafeCritical]  // auto-generated
+        public static int CreateHeap()
+        {
+            return _CreateHeap();
+        }
+
+        [System.Security.SecuritySafeCritical]  // auto-generated
+        public static void DeleteHeap(int heapId)
+        {
+            _DeleteHeap(heapId);
+        }
+
+        [System.Security.SecuritySafeCritical]  // auto-generated
+        public static void SetHeapOnCurrentThread(int heapId)
+        {
+            _SetHeapOnCurrentThread(heapId);
+        }
+
+        [System.Security.SecuritySafeCritical]  // auto-generated
+        public static void UnsetHeapOnCurrentThread()
+        {
+            _UnsetHeapOnCurrentThread();
+        }
+
+        [System.Security.SecurityCritical]  // auto-generated
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
         private static extern bool _RegisterForFullGCNotification(int maxGenerationPercentage, int largeObjectHeapPercentage);
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]

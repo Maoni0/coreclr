@@ -1922,6 +1922,11 @@ FCIMPL0(int, GCInterface::GetMaxGeneration)
 }
 FCIMPLEND
 
+/*===============================GetAllocatedBytesForCurrentThread===============================
+**Action: Returns the allocated bytes so far on the current thread
+**Arguments: None
+**Exceptions: None
+==============================================================================*/
 FCIMPL0(INT64, GCInterface::GetAllocatedBytesForCurrentThread)
 {
     FCALL_CONTRACT;
@@ -1935,6 +1940,59 @@ FCIMPL0(INT64, GCInterface::GetAllocatedBytesForCurrentThread)
     }
 
     return currentAllocated;
+}
+FCIMPLEND
+
+/*==============================CreateHeap================================
+**Action: Creates a heap
+**Arguments: None
+**Exceptions: OOM
+==============================================================================*/
+FCIMPL0(int, GCInterface::CreateHeap)
+{
+	FCALL_CONTRACT;
+
+	int heapId = GCHeap::GetGCHeap()->CreateHeap();
+	FC_GC_POLL_RET();
+	return heapId;
+}
+FCIMPLEND
+
+/*==============================DeleteHeap================================
+**Action: Deletes the specified heap
+**Arguments: heap ID
+**Exceptions: None
+==============================================================================*/
+FCIMPL1(void, GCInterface::DeleteHeap, INT32 heapId)
+{
+	FCALL_CONTRACT;
+
+	FC_GC_POLL();
+}
+FCIMPLEND
+
+/*==============================SetHeapOnCurrentThread================================
+**Action: Sets the current thread to use the specified heap
+**Arguments: heap ID
+**Exceptions: None
+==============================================================================*/
+FCIMPL1(void, GCInterface::SetHeapOnCurrentThread, INT32 heapId)
+{
+	FCALL_CONTRACT;
+
+	FC_GC_POLL();
+}
+FCIMPLEND
+
+/*==============================UnsetHeapOnCurrentThread================================
+**Action: Reverts the current heap to use the default heap
+**Arguments: None
+**Exceptions: None
+==============================================================================*/
+FCIMPL0(void, GCInterface::UnsetHeapOnCurrentThread)
+{
+	FCALL_CONTRACT;
+
 }
 FCIMPLEND
 
@@ -1957,7 +2015,6 @@ FCIMPL1(void, GCInterface::SuppressFinalize, Object *obj)
     FC_GC_POLL();
 }
 FCIMPLEND
-
 
 /*============================ReRegisterForFinalize==============================
 **Action: Indicate that an object's finalizer should be run by the system.

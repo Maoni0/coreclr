@@ -200,6 +200,11 @@ public:
     int StartNoGCRegion(uint64_t totalSize, BOOL lohSizeKnown, uint64_t lohSize, BOOL disallowFullBlockingGC);
     int EndNoGCRegion();
 
+	int CreateHeap();
+	void DeleteHeap(int heapId);
+	void SetHeapOnCurrentThread(int heapId);
+	void UnsetHeapOnCurrentThread();
+
     PER_HEAP_ISOLATED     unsigned GetMaxGeneration();
  
     unsigned GetGcCount();

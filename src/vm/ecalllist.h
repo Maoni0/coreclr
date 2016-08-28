@@ -1569,8 +1569,13 @@ FCFuncStart(gGCInterfaceFuncs)
 
     FCFuncElement("_SuppressFinalize", GCInterface::SuppressFinalize)
     FCFuncElement("_ReRegisterForFinalize", GCInterface::ReRegisterForFinalize)
-    
+
     FCFuncElement("_GetAllocatedBytesForCurrentThread", GCInterface::GetAllocatedBytesForCurrentThread)
+
+	FCFuncElement("_CreateHeap", GCInterface::CreateHeap)
+	FCFuncElement("_DeleteHeap", GCInterface::DeleteHeap)
+	FCFuncElement("_SetHeapOnCurrentThread", GCInterface::SetHeapOnCurrentThread)
+	FCFuncElement("_UnsetHeapOnCurrentThread", GCInterface::UnsetHeapOnCurrentThread)
 FCFuncEnd()
 
 #ifndef FEATURE_CORECLR

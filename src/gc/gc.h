@@ -590,6 +590,11 @@ public:
     virtual int StartNoGCRegion(uint64_t totalSize, BOOL lohSizeKnown, uint64_t lohSize, BOOL disallowFullBlockingGC) = 0;
     virtual int EndNoGCRegion() = 0;
 
+	virtual int CreateHeap() = 0;
+	virtual void DeleteHeap(int heapId) = 0;
+	virtual void SetHeapOnCurrentThread(int heapId) = 0;
+	virtual void UnsetHeapOnCurrentThread() = 0;
+
     virtual BOOL IsObjectInFixedHeap(Object *pObj) = 0;
     virtual size_t  GetTotalBytesInUse () = 0;
     virtual size_t  GetCurrentObjSize() = 0;

@@ -35575,6 +35575,23 @@ int GCHeap::EndNoGCRegion()
     return (int)gc_heap::end_no_gc_region();
 }
 
+int GCHeap::CreateHeap()
+{
+	return 3;
+}
+
+void GCHeap::DeleteHeap(int heapId)
+{
+}
+
+void GCHeap::SetHeapOnCurrentThread(int heapId)
+{
+}
+
+void GCHeap::UnsetHeapOnCurrentThread()
+{
+}
+
 void GCHeap::PublishObject (uint8_t* Obj)
 {
 #ifdef BACKGROUND_GC

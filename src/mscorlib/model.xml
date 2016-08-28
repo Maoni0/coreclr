@@ -2103,12 +2103,14 @@
     </Type>
     <Type Name="System.GC">
       <Member Name="AddMemoryPressure(System.Int64)" />
+      <Member Name="CreateHeap" />
       <Member Name="Collect" />
       <Member Name="Collect(System.Int32)" />
       <Member Name="Collect(System.Int32,System.GCCollectionMode)" />
       <Member Name="Collect(System.Int32,System.GCCollectionMode,System.Boolean)" />
       <Member Name="Collect(System.Int32,System.GCCollectionMode,System.Boolean,System.Boolean)" />
       <Member Name="CollectionCount(System.Int32)" />
+      <Member Name="DeleteHeap(System.Int32)" />
       <Member Name="GetAllocatedBytesForCurrentThread" />
       <Member Name="GetGeneration(System.Object)" />
       <Member Name="GetGeneration(System.WeakReference)" />
@@ -2117,7 +2119,9 @@
       <Member Name="KeepAlive(System.Object)" />
       <Member Name="RemoveMemoryPressure(System.Int64)" />
       <Member Name="ReRegisterForFinalize(System.Object)" />
+      <Member Name="SetHeapOnCurrentThread(System.Int32)" />
       <Member Name="SuppressFinalize(System.Object)" />
+      <Member Name="UnsetHeapOnCurrentThread" />
       <Member Name="WaitForPendingFinalizers" />
       <Member MemberType="Property" Name="MaxGeneration" />
     </Type>

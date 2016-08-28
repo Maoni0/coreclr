@@ -184,7 +184,12 @@ public:
     static FCDECL1(void,    ReRegisterForFinalize, Object *obj);
     static FCDECL2(int,     CollectionCount, INT32 generation, INT32 getSpecialGCCount);
     
-    static FCDECL0(INT64,    GetAllocatedBytesForCurrentThread);
+    static FCDECL0(INT64,   GetAllocatedBytesForCurrentThread);
+
+	static FCDECL0(int,		CreateHeap);
+	static FCDECL1(void,	DeleteHeap, INT32 heapId);
+	static FCDECL1(void,	SetHeapOnCurrentThread, INT32 heapId);
+	static FCDECL0(void,	UnsetHeapOnCurrentThread);
 
     static 
     int QCALLTYPE StartNoGCRegion(INT64 totalSize, BOOL lohSizeKnown, INT64 lohSize, BOOL disallowFullBlockingGC);
