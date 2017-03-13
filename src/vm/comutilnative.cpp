@@ -1918,6 +1918,8 @@ FCIMPL0(INT64, GCInterface::GetAllocatedBytesForCurrentThread)
     INT64 currentAllocated = 0;
     Thread *pThread = GetThread();
     gc_alloc_context* ac = pThread->GetAllocContext();
+    //printf ("ac ptr: %Ix, limit %Ix, bytes: %Id-%Id\n", 
+    //    ac->alloc_ptr, ac->alloc_limit, ac->alloc_bytes, ac->alloc_bytes_loh);
     currentAllocated = ac->alloc_bytes + ac->alloc_bytes_loh - (ac->alloc_limit - ac->alloc_ptr);
 
     return currentAllocated;

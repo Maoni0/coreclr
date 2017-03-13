@@ -5795,6 +5795,9 @@ void gc_heap::fix_allocation_context (alloc_context* acontext, BOOL for_gc_p,
 
     if (for_gc_p)
     {
+        // We need to update the alloc_bytes to reflect the portion that we have not used
+        acontext->alloc_bytes -= (acontext->alloc_limit - acontext->alloc_ptr);
+
         acontext->alloc_ptr = 0;
         acontext->alloc_limit = acontext->alloc_ptr;
     }
@@ -11356,6 +11359,8 @@ void gc_heap::adjust_limit_clr (uint8_t* start, size_t limit_size,
     dprintf (3, ("Expanding segment allocation [%Ix, %Ix[", (size_t)start,
                (size_t)start + limit_size - aligned_min_obj_size));
 
+    //printf ("in gc: ptr: %Ix, limit: %Ix, start: %Ix\n", acontext->alloc_ptr, acontext->alloc_limit, start);
+
     if ((acontext->alloc_limit != start) &&
         (acontext->alloc_limit + aligned_min_obj_size)!= start)
     {
@@ -11366,6 +11371,7 @@ void gc_heap::adjust_limit_clr (uint8_t* start, size_t limit_size,
             dprintf (3, ("filling up hole [%Ix, %Ix[", (size_t)hole, (size_t)hole + size + Align (min_obj_size, align_const)));
             // when we are finishing an allocation from a free list
             // we know that the free area was Align(min_obj_size) larger
+            //printf ("in gc: mua ptr: %Ix, limit: %Ix\n", acontext->alloc_ptr, acontext->alloc_limit);
             acontext->alloc_bytes -= size;
             size_t free_obj_size = size + aligned_min_obj_size;
             make_unused_array (hole, free_obj_size);
@@ -11373,8 +11379,17 @@ void gc_heap::adjust_limit_clr (uint8_t* start, size_t limit_size,
         }
         acontext->alloc_ptr = start;
     }
+    else
+    {
+        // If the next alloc context is right up against the current one it means we are absorbing the min
+        // object, so need to account for that.
+        acontext->alloc_bytes += (start - acontext->alloc_limit);
+    }
+
     acontext->alloc_limit = (start + limit_size - aligned_min_obj_size);
     acontext->alloc_bytes += limit_size - ((gen_number < max_generation + 1) ? aligned_min_obj_size : 0);
+
+    //printf ("in gc: new ptr: %Ix, limit: %Ix\n", acontext->alloc_ptr, acontext->alloc_limit);
 
 #ifdef FEATURE_APPDOMAIN_RESOURCE_MONITORING
     if (g_fEnableARM)
