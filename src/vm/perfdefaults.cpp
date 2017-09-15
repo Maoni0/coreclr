@@ -59,6 +59,8 @@ extern int32_t g_bLowMemoryFromHost;
             //
             // Note that in order for ASP.Net to become a memory host the CLR will need to support profiler attach
             // in that condition.
+            //
+            // TODO! g_bLowMemoryFromHost is to be removed - this should set the appropriate latency level instead.
             g_bLowMemoryFromHost = 1;
             break;
 
