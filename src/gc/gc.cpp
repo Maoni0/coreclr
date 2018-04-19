@@ -6183,7 +6183,7 @@ uint8_t* get_plug_start_in_saved (uint8_t* old_loc, mark* pinned_plug_entry)
     uint8_t* plug_start_in_saved = saved_pre_plug_info + (old_loc - (pinned_plug (pinned_plug_entry) - sizeof (plug_and_gap)));
     //dprintf (1, ("detected a very short plug: %Ix before PP %Ix, pad %Ix", 
     //    old_loc, pinned_plug (pinned_plug_entry), plug_start_in_saved));
-    dprintf (1, ("EP: %Ix(%Ix), %Ix", old_loc, pinned_plug (pinned_plug_entry), plug_start_in_saved));
+    dprintf (2, ("EP: %Ix(%Ix), %Ix", old_loc, pinned_plug (pinned_plug_entry), plug_start_in_saved));
     return plug_start_in_saved;
 }
 
@@ -6446,7 +6446,7 @@ size_t card_bundle_cardw (size_t cardb)
 void gc_heap::card_bundle_clear (size_t cardb)
 {
     card_bundle_table [card_bundle_word (cardb)] &= ~(1 << card_bundle_bit (cardb));
-    dprintf (1,("Cleared card bundle %Ix [%Ix, %Ix[", cardb, (size_t)card_bundle_cardw (cardb),
+    dprintf (2,("Cleared card bundle %Ix [%Ix, %Ix[", cardb, (size_t)card_bundle_cardw (cardb),
               (size_t)card_bundle_cardw (cardb+1)));
 }
 
@@ -20377,7 +20377,7 @@ void gc_heap::plan_generation_start (generation* gen, generation* consing_gen, u
         generation_allocation_pointer (consing_gen) += allocation_left;
     }
 
-    dprintf (1, ("plan alloc gen%d(%Ix) start at %Ix (ptr: %Ix, limit: %Ix, next: %Ix)", gen->gen_num, 
+    dprintf (2, ("plan alloc gen%d(%Ix) start at %Ix (ptr: %Ix, limit: %Ix, next: %Ix)", gen->gen_num, 
         generation_plan_allocation_start (gen),
         generation_plan_allocation_start_size (gen),
         generation_allocation_pointer (consing_gen), generation_allocation_limit (consing_gen),
@@ -20404,7 +20404,7 @@ void gc_heap::realloc_plan_generation_start (generation* gen, generation* consin
         generation_allocation_pointer (consing_gen) += allocation_left;
     }
 
-    dprintf (1, ("plan re-alloc gen%d start at %Ix (ptr: %Ix, limit: %Ix)", gen->gen_num, 
+    dprintf (2, ("plan re-alloc gen%d start at %Ix (ptr: %Ix, limit: %Ix)", gen->gen_num, 
         generation_plan_allocation_start (consing_gen),
         generation_allocation_pointer (consing_gen), 
         generation_allocation_limit (consing_gen))); 
@@ -20492,11 +20492,11 @@ retry:
     if ((active_old_gen_number > 0) &&
         (x >= generation_allocation_start (generation_of (active_old_gen_number - 1))))
     {
-        dprintf (1, ("crossing gen%d, x is %Ix", active_old_gen_number - 1, x));
+        dprintf (2, ("crossing gen%d, x is %Ix", active_old_gen_number - 1, x));
 
         if (!pinned_plug_que_empty_p())
         {
-            dprintf (1, ("oldest pin: %Ix(%Id)",
+            dprintf (2, ("oldest pin: %Ix(%Id)",
                 pinned_plug (oldest_pin()), 
                 (x - pinned_plug (oldest_pin()))));
         }
@@ -20523,7 +20523,7 @@ retry:
                 // We are about to allocate gen1, check to see how efficient fitting in gen2 pinned free spaces is.
                 for (int j = 0; j < NUM_GEN_POWER2; j++)
                 {
-                    dprintf (1, ("[h%d][#%Id]2^%d: current: %Id, S: 2: %Id, 1: %Id(%Id)", 
+                    dprintf (2, ("[h%d][#%Id]2^%d: current: %Id, S: 2: %Id, 1: %Id(%Id)", 
                         heap_number, 
                         settings.gc_index,
                         (j + 10), 
@@ -20541,7 +20541,7 @@ retry:
                     pinned_free_list_efficiency = (float)(generation_allocated_in_pinned_free (gen_2)) / (float)total_pinned_free_space;
                 }
 
-                dprintf (1, ("[h%d] gen2 allocated %Id bytes with %Id bytes pinned free spaces (effi: %d%%), %Id (%Id) left",
+                dprintf (2, ("[h%d] gen2 allocated %Id bytes with %Id bytes pinned free spaces (effi: %d%%), %Id (%Id) left",
                             heap_number,
                             generation_allocated_in_pinned_free (gen_2),
                             total_pinned_free_space, 
@@ -20606,7 +20606,7 @@ retry:
 
             plan_generation_start (generation_of (active_new_gen_number), consing_gen, x);
                 
-            dprintf (1, ("process eph: allocated gen%d start at %Ix", 
+            dprintf (2, ("process eph: allocated gen%d start at %Ix", 
                 active_new_gen_number,
                 generation_plan_allocation_start (generation_of (active_new_gen_number))));
 
@@ -22321,13 +22321,13 @@ void gc_heap::plan_phase (int condemned_gen_number)
 
         if (growth > 0)
         {
-            dprintf (1, ("gen2 grew %Id (end seg alloc: %Id, gen1 c alloc: %Id", 
+            dprintf (2, ("gen2 grew %Id (end seg alloc: %Id, gen1 c alloc: %Id", 
                 growth, generation_end_seg_allocated (generation_of (max_generation)), 
                 generation_condemned_allocated (generation_of (max_generation - 1))));
         }
         else
         {
-            dprintf (1, ("gen2 shrank %Id (end seg alloc: %Id, gen1 c alloc: %Id", 
+            dprintf (2, ("gen2 shrank %Id (end seg alloc: %Id, gen1 c alloc: %Id", 
                 (old_gen2_size - plan_gen2_size), generation_end_seg_allocated (generation_of (max_generation)), 
                 generation_condemned_allocated (generation_of (max_generation - 1))));
         }
@@ -22338,12 +22338,12 @@ void gc_heap::plan_phase (int condemned_gen_number)
         size_t end_seg_allocated = generation_end_seg_allocated (older_gen) - r_older_gen_end_seg_allocated;
         size_t condemned_allocated = generation_condemned_allocated (older_gen) - r_older_gen_condemned_allocated;
 
-        dprintf (1, ("older gen's free alloc: %Id->%Id, seg alloc: %Id->%Id, condemned alloc: %Id->%Id",
+        dprintf (2, ("older gen's free alloc: %Id->%Id, seg alloc: %Id->%Id, condemned alloc: %Id->%Id",
                     r_older_gen_free_list_allocated, generation_free_list_allocated (older_gen),
                     r_older_gen_end_seg_allocated, generation_end_seg_allocated (older_gen), 
                     r_older_gen_condemned_allocated, generation_condemned_allocated (older_gen)));
 
-        dprintf (1, ("this GC did %Id free list alloc(%Id bytes free space rejected), %Id seg alloc and %Id condemned alloc, gen1 condemned alloc is %Id", 
+        dprintf (2, ("this GC did %Id free list alloc(%Id bytes free space rejected), %Id seg alloc and %Id condemned alloc, gen1 condemned alloc is %Id", 
             free_list_allocated, rejected_free_space, end_seg_allocated,
             condemned_allocated, generation_condemned_allocated (generation_of (settings.condemned_generation))));
 
@@ -22362,14 +22362,14 @@ void gc_heap::plan_phase (int condemned_gen_number)
 
         int running_free_list_efficiency = (int)(generation_allocator_efficiency(older_gen)*100);
 
-        dprintf (1, ("gen%d free list alloc effi: %d%%, current effi: %d%%",
+        dprintf (2, ("gen%d free list alloc effi: %d%%, current effi: %d%%",
                     older_gen->gen_num,
                     free_list_efficiency, running_free_list_efficiency));
 
-        dprintf (1, ("gen2 free list change"));
+        dprintf (2, ("gen2 free list change"));
         for (int j = 0; j < NUM_GEN_POWER2; j++)
         {
-            dprintf (1, ("[h%d][#%Id]: 2^%d: F: %Id->%Id(%Id), P: %Id", 
+            dprintf (2, ("[h%d][#%Id]: 2^%d: F: %Id->%Id(%Id), P: %Id", 
                 heap_number, 
                 settings.gc_index,
                 (j + 10), r_older_gen_free_space[j], older_gen->gen_free_spaces[j], 
@@ -29524,8 +29524,8 @@ void gc_heap::set_static_data()
 
         dprintf (GTC_LOG, ("PM: %d - min: %Id, max: %Id, fr_l: %Id, fr_b: %d%%",
             settings.pause_mode,
-            dd->min_size, dd_max_size, 
-            dd->fragmentation_limit, (int)(dd->fragmentation_burden_limit * 100)));
+            dd->min_size, dd_max_size (dd), 
+            sdata->fragmentation_limit, (int)(sdata->fragmentation_burden_limit * 100)));
     }
 }
 
@@ -29635,7 +29635,8 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
     if (dd_begin_data_size (dd) == 0)
     {
         size_t new_allocation = dd_min_size (dd);
-        current_gc_data_per_heap->gen_data[gen_number].new_allocation = new_allocation;        
+        current_gc_data_per_heap->gen_data[gen_number].new_allocation = new_allocation;
+        dprintf (1, ("[h%d] beg size 0 -> %Id", heap_number, new_allocation));
         return new_allocation;
     }
     else
@@ -29649,7 +29650,12 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
         float     f = 0;
         size_t    max_size = dd_max_size (dd);
         size_t    new_allocation = 0;
+        size_t    new_allocation_surv = 0;
+        size_t    new_allocation_linear = 0;
+        size_t    new_allocation_mem = 0;
+
         float allocation_fraction = (float) (dd_desired_allocation (dd) - dd_gc_new_allocation (dd)) / (float) (dd_desired_allocation (dd));
+        dprintf (1, ("[h%d] min: %Id, alloc f: %%d", min_gc_size, (int)(100.0 * allocation_fraction)));
         if (gen_number >= max_generation)
         {
             size_t    new_size = 0;
@@ -29672,9 +29678,12 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
             if (gen_number == max_generation)
             {
                 new_allocation  =  max((new_size - current_size), min_gc_size);
+                new_allocation_surv = new_allocation;
 
                 new_allocation = linear_allocation_model (allocation_fraction, new_allocation, 
                                                           dd_desired_allocation (dd), dd_collection_count (dd));
+
+                new_allocation_linear = new_allocation;
 
                 if ((dd_fragmentation (dd) > ((size_t)((f-1)*current_size))))
                 {
@@ -29686,6 +29695,7 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                     dprintf (2, ("Reducing max_gen allocation due to fragmentation from %Id to %Id",
                                  new_allocation, new_allocation1));
                     new_allocation = new_allocation1;
+                    new_allocation_mem = new_allocation;
                 }
             }
             else //large object heap
@@ -29704,14 +29714,20 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                     available_free = (uint64_t)MAX_PTR;
                 }
 
+                new_allocation = new_size - current_size;
+                new_allocation_surv = new_allocation;
+
                 //try to avoid OOM during large object allocation
-                new_allocation = max (min(max((new_size - current_size), dd_desired_allocation (dynamic_data_of (max_generation))), 
+                new_allocation = max (min(max(new_allocation, dd_desired_allocation (dynamic_data_of (max_generation))), 
                                           (size_t)available_free), 
                                       max ((current_size/4), min_gc_size));
+
+                new_allocation_mem = new_allocation;
 
                 new_allocation = linear_allocation_model (allocation_fraction, new_allocation,
                                                           dd_desired_allocation (dd), dd_collection_count (dd));
 
+                new_allocation_linear = new_allocation;
             }
         }
         else
@@ -29720,15 +29736,17 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
             cst = float (survivors) / float (dd_begin_data_size (dd));
             f = surv_to_growth (cst, limit, max_limit);
             new_allocation = (size_t) min (max ((f * (survivors)), min_gc_size), max_size);
+            size_t new_allocation_surv = new_allocation;
 
             new_allocation = linear_allocation_model (allocation_fraction, new_allocation, 
                                                       dd_desired_allocation (dd), dd_collection_count (dd));
+
+            new_allocation_linear = new_allocation;
 
             if (gen_number == 0)
             {
                 if (pass == 0)
                 {
-
                     //printf ("%f, %Id\n", cst, new_allocation);
                     size_t free_space = generation_free_list_space (generation_of (gen_number));
                     // DTREVIEW - is min_gc_size really a good choice? 
@@ -29749,6 +29767,7 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                     dprintf (2, ("Reducing new allocation based on fragmentation"));
                     new_allocation = min (new_allocation,
                                           max (min_gc_size, (max_size/3)));
+                    new_allocation_mem = new_allocation;
                 }
             }
         }
@@ -29762,9 +29781,12 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
         dd_surv (dd) = cst;
 
 #ifdef SIMPLE_DPRINTF
-        dprintf (1, ("h%d g%d surv: %Id current: %Id alloc: %Id (%d%%) f: %d%% new-size: %Id new-alloc: %Id",
+        dprintf (1, ("[h%d] g%d surv: %Id current: %Id alloc: %Id (%d%%) f: %d%% new-size: %Id new-alloc: %Id",
                      heap_number, gen_number, out, current_size, (dd_desired_allocation (dd) - dd_gc_new_allocation (dd)),
                      (int)(cst*100), (int)(f*100), current_size + new_allocation, new_allocation));
+
+        dprintf (1, ("[h%d] alloc surv %Id, linear %Id, mem %Id", heap_number, 
+            new_allocation_surv, new_allocation_linear, new_allocation_mem));
 #else
         dprintf (1,("gen: %d in: %Id out: %Id ", gen_number, generation_allocation_size (generation_of (gen_number)), out));
         dprintf (1,("current: %Id alloc: %Id ", current_size, (dd_desired_allocation (dd) - dd_gc_new_allocation (dd))));
@@ -29900,10 +29922,12 @@ size_t gc_heap::trim_youngest_desired (uint32_t memory_load,
         // our max memory load limit, trim the gen0 budget so the total 
         // is the max memory load limit.
         size_t remain_memory_load = (MAX_ALLOWED_MEM_LOAD - memory_load) * mem_one_percent;
+        dprintf (1, ("ML %d, total new %Id, remain %Id", memory_load, total_new_allocation, remain_memory_load))
         return min (total_new_allocation, remain_memory_load);
     }
     else
     {
+        dprintf (1, ("ML %d, max %Id, total min %Id", memory_load, mem_one_percent, total_min_allocation))
         return max (mem_one_percent, total_min_allocation);
     }
 }
@@ -30150,10 +30174,14 @@ void gc_heap::decommit_ephemeral_segment_pages()
         slack_space = min (slack_space, new_slack_space);
     }
 
+    uint8_t* saved_committed = heap_segment_committed (ephemeral_heap_segment);
+
     decommit_heap_segment_pages (ephemeral_heap_segment, slack_space);    
 
     gc_history_per_heap* current_gc_data_per_heap = get_gc_data_per_heap();
     current_gc_data_per_heap->extra_gen0_committed = heap_segment_committed (ephemeral_heap_segment) - heap_segment_allocated (ephemeral_heap_segment);
+    dprintf (1, ("[h%d] slack: %Id, commit %Ix->%Ix(extra: %Id)", heap_number, slack_space, 
+        saved_committed, heap_segment_committed (ephemeral_heap_segment), current_gc_data_per_heap->extra_gen0_committed));
 }
 
 size_t gc_heap::new_allocation_limit (size_t size, size_t free_size, int gen_number)
