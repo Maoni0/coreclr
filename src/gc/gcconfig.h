@@ -89,6 +89,7 @@ public:
   INT_CONFIG(LogFileSize,   "GCLogFileSize", 0, "Specifies the GC log file size")              \
   INT_CONFIG(CompactRatio,  "GCCompactRatio", 0,                                               \
       "Specifies the ratio compacting GCs vs sweeping")                                        \
+  INT_CONFIG(ClearOnCompact, "GCClearOnCompact", 0, "Clear memory on compaction")            \
   STRING_CONFIG(LogFile,    "GCLogFile",    "Specifies the name of the GC log file")           \
   STRING_CONFIG(ConfigLogFile, "GCConfigLogFile",                                              \
       "Specifies the name of the GC config log file")                                          \

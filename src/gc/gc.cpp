@@ -2546,6 +2546,8 @@ BOOL        gc_heap::ro_segments_in_range;
 
 size_t      gc_heap::gen0_big_free_spaces = 0;
 
+uint8_t*    gc_heap::saved_ephemeral_seg_allocated = 0;
+
 uint8_t*    gc_heap::ephemeral_low;
 
 uint8_t*    gc_heap::ephemeral_high;
@@ -2774,6 +2776,7 @@ size_t        gc_heap::min_segment_size_shr = 0;
 size_t        gc_heap::soh_segment_size = 0;
 size_t        gc_heap::min_loh_segment_size = 0;
 size_t        gc_heap::segment_info_size = 0;
+bool          gc_heap::clear_mem_on_compact_p = false;
 
 #ifdef GC_CONFIG_DRIVEN
 size_t gc_heap::time_init = 0;
@@ -9283,6 +9286,9 @@ void gc_heap::decommit_heap_segment_pages (heap_segment* seg,
             (size_t)page_start, 
             (size_t)(page_start + size),
             size));
+
+        assert (heap_segment_used (seg) <= heap_segment_committed (seg));
+
         heap_segment_committed (seg) = page_start;
         if (heap_segment_used (seg) > heap_segment_committed (seg))
         {
@@ -9402,8 +9408,11 @@ void gc_heap::rearrange_heap_segments(BOOL compacting)
             {
                 if (!heap_segment_read_only_p (seg))
                 {
+                    uint8_t* saved_plan_allocated = heap_segment_plan_allocated (seg);
+                    uint8_t* saved_allocated = heap_segment_allocated (seg);
                     if (compacting)
                     {
+                        update_used_in_gc (seg);
                         heap_segment_allocated (seg) =
                             heap_segment_plan_allocated (seg);
                     }
@@ -9411,7 +9420,22 @@ void gc_heap::rearrange_heap_segments(BOOL compacting)
                     // reset the pages between allocated and committed.
                     if (seg != ephemeral_heap_segment)
                     {
+                        uint8_t* saved_used = heap_segment_used (seg);
+                        dprintf (1, ("[CC] before decommit: saved plan alloc: %Ix, alloc: %Ix, used: %Ix",
+                            saved_plan_allocated, saved_allocated, saved_used));
                         decommit_heap_segment_pages (seg, 0);
+
+                        if (compacting)
+                        {
+                            if (heap_segment_used (seg) != saved_used)
+                            {
+                                dprintf (1, ("[CC] after decommit: saved plan alloc: %Ix, alloc: %Ix, used: %Ix",
+                                    saved_plan_allocated, saved_allocated, heap_segment_used (seg)));
+                            }
+
+                            if (settings.condemned_generation == max_generation)
+                                clear_mem_end_seg (seg, saved_allocated);
+                        }
                     }
                 }
                 prev_seg = seg;
@@ -10131,6 +10155,8 @@ gc_heap::init_semi_shared()
 #ifdef SHORT_PLUGS
     short_plugs_pad_ratio = (double)DESIRED_PLUG_LENGTH / (double)(DESIRED_PLUG_LENGTH - Align (min_obj_size));
 #endif //SHORT_PLUGS
+
+    clear_mem_on_compact_p = (GCConfig::GetClearOnCompact() != 0);
 
     ret = 1;
 
@@ -11348,6 +11374,47 @@ void allocator::commit_alloc_list_changes()
             }
 
             alloc_list_damage_count_of (i) = 0; 
+        }
+    }
+}
+
+void gc_heap::clear_mem_end_seg (heap_segment* seg, uint8_t* saved_allocated)
+{
+    if (clear_mem_on_compact_p)
+    {
+        uint8_t* saved_used = heap_segment_used (seg);
+
+        dprintf (1, ("seg: %Ix, used is %Ix, saved alloc: %Ix, alloc: %Ix",
+            (size_t)seg, saved_used, saved_allocated, heap_segment_allocated (seg)));
+
+        uint8_t* clear_end = min ((saved_allocated - plug_skew), heap_segment_used (seg));
+        uint8_t* new_used = heap_segment_allocated (seg) - plug_skew;
+        if (clear_end > new_used)
+        {
+            size_t clear_size = clear_end - new_used;
+            memclr (new_used, clear_size);
+            dprintf (1, ("%s: memclr %Ix->%Ix(%Id)",
+                        ((seg == ephemeral_heap_segment) ? "eph" : "gen2"),
+                        new_used, (new_used + clear_size), clear_size));
+
+            heap_segment_used (seg) = new_used;
+        }
+    }
+}
+
+// This only updates used if used needs to be bigger if clear on compaction isn't requested. 
+// If it's requested, and we retract allocated, we need to clear memory. This only applies to 
+// gen2 compacting GC.
+inline
+void gc_heap::update_used_in_gc (heap_segment* seg)
+{
+    assert ((heap_segment_allocated (seg) - plug_skew) <= heap_segment_used (seg));
+
+    if (heap_segment_plan_allocated (seg) > heap_segment_allocated (seg))
+    {
+        if ((heap_segment_plan_allocated (seg) - plug_skew)  > heap_segment_used (seg))
+        {
+            heap_segment_used (seg) = heap_segment_plan_allocated (seg) - plug_skew;
         }
     }
 }
@@ -15802,6 +15869,9 @@ void gc_heap::gc1()
         }
         alloc_context_count = 0;
         heap_select::mark_heap (heap_number);
+
+        if (settings.compaction)
+            clear_mem_end_seg (ephemeral_heap_segment, saved_ephemeral_seg_allocated);
     }
 
 #else
@@ -15812,6 +15882,9 @@ void gc_heap::gc1()
 
     decommit_ephemeral_segment_pages();
     fire_pevents();
+
+    if (settings.compaction)
+        clear_mem_end_seg (ephemeral_heap_segment, saved_ephemeral_seg_allocated);
 
     if (!(settings.concurrent))
     {
@@ -21102,25 +21175,17 @@ void gc_heap::compact_loh()
             {
                 if (!heap_segment_read_only_p (seg))
                 {
-                    // We grew the segment to accommodate allocations.
-                    if (heap_segment_plan_allocated (seg) > heap_segment_allocated (seg))
-                    {
-                        if ((heap_segment_plan_allocated (seg) - plug_skew)  > heap_segment_used (seg))
-                        {
-                            heap_segment_used (seg) = heap_segment_plan_allocated (seg) - plug_skew;
-                        }
-                    }
-
+                    update_used_in_gc (seg);
+                    uint8_t* saved_allocated = heap_segment_allocated (seg);
                     heap_segment_allocated (seg) = heap_segment_plan_allocated (seg);
-                    dprintf (3, ("Trimming seg to %Ix[", heap_segment_allocated (seg)));
                     decommit_heap_segment_pages (seg, 0);
-                    dprintf (1236, ("CLOH: seg: %Ix, alloc: %Ix, used: %Ix, committed: %Ix",
+                    dprintf (3, ("CLOH: seg: %Ix, alloc: %Ix, used: %Ix, committed: %Ix",
                         seg, 
                         heap_segment_allocated (seg),
                         heap_segment_used (seg),
                         heap_segment_committed (seg)));
-                    //heap_segment_used (seg) = heap_segment_allocated (seg) - plug_skew;
-                    dprintf (1236, ("CLOH: used is set to %Ix", heap_segment_used (seg)));
+
+                    clear_mem_end_seg (seg, saved_allocated);
                 }
                 prev_seg = seg;
             }
@@ -22743,6 +22808,7 @@ void gc_heap::plan_phase (int condemned_gen_number)
             generation*  gen = generation_of (gen_number);
             uint8_t*  low = generation_allocation_start (generation_of (gen_number-1));
             uint8_t*  high =  heap_segment_allocated (ephemeral_heap_segment);
+            bool clear_free_p = clear_mem_on_compact_p;
             
             while (!pinned_plug_que_empty_p())
             {
@@ -22805,6 +22871,17 @@ void gc_heap::plan_phase (int condemned_gen_number)
 
                     dprintf(3,("threading it into generation %d", gen_number));
                     thread_gap (arr, len, gen);
+                    if (clear_free_p)
+                    {
+                        uint8_t* clear_start = arr + sizeof (ArrayBase);
+                        size_t clear_size = len - sizeof (ArrayBase) - plug_skew;
+                        memclr (clear_start, clear_size);
+
+                        dprintf (1, ("g%d FO: %Ix->%Ix(%Id), memclr %Ix->%Ix(%Id)", 
+                             gen_number, arr, (arr + len), len,
+                             clear_start, (clear_start + clear_size), clear_size));
+                    }
+
                     add_gen_free (gen_number, len);
                 }
             }
@@ -22979,7 +23056,7 @@ void gc_heap::fix_generation_bounds (int condemned_gen_number,
     }
 #endif //MULTIPLE_HEAPS
     {
-        alloc_allocated = heap_segment_plan_allocated(ephemeral_heap_segment);
+        alloc_allocated = heap_segment_plan_allocated (ephemeral_heap_segment);
         //reset the allocated size
         uint8_t* start = generation_allocation_start (youngest_generation);
         MAYBE_UNUSED_VAR(start);
@@ -22989,8 +23066,9 @@ void gc_heap::fix_generation_bounds (int condemned_gen_number,
                     heap_segment_plan_allocated(ephemeral_heap_segment));
         }
 
-        heap_segment_allocated(ephemeral_heap_segment)=
-            heap_segment_plan_allocated(ephemeral_heap_segment);
+        saved_ephemeral_seg_allocated = heap_segment_allocated (ephemeral_heap_segment);
+        heap_segment_allocated (ephemeral_heap_segment) =
+            heap_segment_plan_allocated (ephemeral_heap_segment);
     }
 }
 
@@ -29500,6 +29578,18 @@ generation* gc_heap::expand_heap (int condemned_generation,
     verify_no_pins (heap_segment_plan_allocated (old_seg), heap_segment_reserved(old_seg));
 
     dprintf(2,("---- End of Heap Expansion ----"));
+
+    // We need to update used for the new ephemeral segment otherwise we will not have an 
+    // opportunity later.
+    if (heap_segment_used (ephemeral_heap_segment) < heap_segment_plan_allocated (ephemeral_heap_segment))
+    {
+        dprintf (1, ("update used for new ephemeral seg %Ix from %Ix to %Ix", 
+            (size_t)ephemeral_heap_segment, 
+            heap_segment_used (ephemeral_heap_segment), 
+            heap_segment_plan_allocated (ephemeral_heap_segment)));
+        heap_segment_used (ephemeral_heap_segment) = heap_segment_plan_allocated (ephemeral_heap_segment);
+    }
+
     return consing_gen;
 }
 
@@ -29517,7 +29607,7 @@ void gc_heap::set_static_data()
         dprintf (GTC_LOG, ("PM: %d - min: %Id, max: %Id, fr_l: %Id, fr_b: %d%%",
             settings.pause_mode,
             dd->min_size, dd_max_size, 
-            dd->fragmentation_limit, (int)(dd->fragmentation_burden_limit * 100)));
+            sdata->fragmentation_limit, (int)(sdata->fragmentation_burden_limit * 100)));
     }
 }
 
@@ -30141,6 +30231,12 @@ void gc_heap::decommit_ephemeral_segment_pages()
 
         slack_space = min (slack_space, new_slack_space);
     }
+
+    dprintf (1, ("slack %Id, alloc %Ix, committed: %Ix, used: %Ix",
+        slack_space, 
+        heap_segment_allocated (ephemeral_heap_segment),
+        heap_segment_committed (ephemeral_heap_segment),
+        heap_segment_used (ephemeral_heap_segment)));
 
     decommit_heap_segment_pages (ephemeral_heap_segment, slack_space);    
 
