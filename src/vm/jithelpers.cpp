@@ -3346,6 +3346,16 @@ HCIMPL3(void*, JIT_Ldelema_Ref, PtrArray* array, unsigned idx, CORINFO_CLASS_HAN
 HCIMPLEND
 #include <optdefault.h>
 
+HCIMPL1 (LPVOID, JIT_ReadBarrier, Object** ppObject)
+{
+    FCALL_CONTRACT;
+
+    printf ("reading ref %Ix\n", (size_t)ppObject);
+
+    return (LPVOID)ppObject;
+}
+HCIMPLEND
+
 //===========================================================================
 // This routine is called if the Array store needs a frame constructed
 // in order to do the array check.  It should only be called from

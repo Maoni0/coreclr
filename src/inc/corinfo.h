@@ -501,6 +501,9 @@ enum CorInfoHelpFunc
     CORINFO_HELP_ASSIGN_BYREF,
     CORINFO_HELP_ASSIGN_STRUCT,
 
+    /* GC Read barrier support */
+
+    CORINFO_HELP_LOAD_REF,        // universal helpers with F_CALL_CONV calling convention
 
     /* Accessing fields */
 

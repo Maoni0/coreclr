@@ -619,6 +619,16 @@ int LinearScan::BuildNode(GenTree* tree)
             srcCount = BuildIndir(tree->AsIndir());
             break;
 
+        case GT_IND:
+            //if (compiler->codeGen->gcInfo.gcIsReadBarrierIndNode (tree))
+            //{
+            //    srcCount = BuildGCReadBarrier (tree);
+            //    break;
+            //}
+            srcCount = BuildIndir (tree->AsIndir ());
+            assert(dstCount == 1);
+            break;
+
         case GT_NULLCHECK:
         {
             assert(dstCount == 0);
@@ -628,10 +638,10 @@ int LinearScan::BuildNode(GenTree* tree)
             break;
         }
 
-        case GT_IND:
-            srcCount = BuildIndir(tree->AsIndir());
-            assert(dstCount == 1);
-            break;
+        //case GT_IND:
+        //    srcCount = BuildIndir(tree->AsIndir());
+        //    assert(dstCount == 1);
+        //    break;
 
         case GT_CATCH_ARG:
             srcCount = 0;

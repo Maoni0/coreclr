@@ -765,6 +765,7 @@ protected:
     void genCodeForMul(GenTreeOp* treeNode);
     void genCodeForMulHi(GenTreeOp* treeNode);
     void genLeaInstruction(GenTreeAddrMode* lea);
+    void genLeaInstruction (GenTreeAddrMode* lea, regNumber regNum);
     void genSetRegToCond(regNumber dstReg, GenTree* tree);
 
 #if defined(_TARGET_ARMARCH_)

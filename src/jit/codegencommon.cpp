@@ -541,6 +541,8 @@ regMaskTP Compiler::compHelperCallKillSet(CorInfoHelpFunc helper)
 {
     switch (helper)
     {
+        case CORINFO_HELP_LOAD_REF:
+            return RBM_ARG_0;
         case CORINFO_HELP_ASSIGN_BYREF:
 #if defined(_TARGET_AMD64_)
             return RBM_RSI | RBM_RDI | RBM_CALLEE_TRASH_NOGC;

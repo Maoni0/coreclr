@@ -10935,6 +10935,9 @@ PCODE CEEJitInfo::getHelperFtnStatic(CorInfoHelpFunc ftnNum)
 
     void* pfnHelper = hlpFuncTable[ftnNum].pfnHelper;
 
+    //printf ("ftnNum is %d, pfnHelper is %Id, DYNAMIC_CORINFO_HELP_COUNT is %d\n", 
+    //    (int)ftnNum, (size_t)pfnHelper, (int)DYNAMIC_CORINFO_HELP_COUNT);
+
     // If pfnHelper is an index into the dynamic helper table, it should be less 
     // than DYNAMIC_CORINFO_HELP_COUNT.  In this case we need to find the actual pfnHelper 
     // using an extra indirection.  Note the special case

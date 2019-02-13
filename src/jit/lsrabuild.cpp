@@ -767,6 +767,15 @@ regMaskTP LinearScan::getKillSetForStoreInd(GenTreeStoreInd* tree)
     return killMask;
 }
 
+regMaskTP LinearScan::getKillSetForInd (GenTreeIndir* tree)
+{
+    assert (tree->OperIs (GT_IND));
+
+    regMaskTP killMask = compiler->compHelperCallKillSet (CORINFO_HELP_LOAD_REF);
+
+    return killMask;
+}
+
 //------------------------------------------------------------------------
 // getKillSetForShiftRotate: Determine the liveness kill set for a shift or rotate node.
 //
@@ -1077,6 +1086,9 @@ regMaskTP LinearScan::getKillSetForNode(GenTree* tree)
         case GT_STOREIND:
             killMask = getKillSetForStoreInd(tree->AsStoreInd());
             break;
+        //case GT_IND:
+        //    killMask = getKillSetForInd (tree->AsIndir ());
+        //    break;
 
 #if defined(PROFILING_SUPPORTED)
         // If this method requires profiler ELT hook then mark these nodes as killing
@@ -3263,6 +3275,24 @@ int LinearScan::BuildGCWriteBarrier(GenTree* tree)
     regMaskTP killMask = getKillSetForStoreInd(tree->AsStoreInd());
     buildKillPositionsForNode(tree, currentLoc + 1, killMask);
     return 2;
+}
+
+int LinearScan::BuildGCReadBarrier (GenTree* tree)
+{
+    GenTree* addr = tree->gtGetOp1 ();
+
+    // We know addr is contained but we need an actual LEA instruction
+    // to prepare to call the helper with.
+    //assert (addr->isContained ());
+    regMaskTP addrCandidates = RBM_ARG_0;
+
+    // this is commented out because it calls removeListNode and complains
+    // that it can't find the node. 
+    //BuildUse (addr, addrCandidates);
+
+    regMaskTP killMask = getKillSetForInd (tree->AsIndir ());
+    buildKillPositionsForNode (tree, currentLoc + 1, killMask);
+    return 1;
 }
 
 //------------------------------------------------------------------------

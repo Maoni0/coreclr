@@ -4723,6 +4723,7 @@ void CodeGen::genCodeForIndir(GenTreeIndir* tree)
     emitter*  emit       = getEmitter();
 
     GenTree* addr = tree->Addr();
+
     if (addr->IsCnsIntOrI() && addr->IsIconHandle(GTF_ICON_TLS_HDL))
     {
         noway_assert(EA_ATTR(genTypeSize(targetType)) == EA_PTRSIZE);
@@ -4733,6 +4734,47 @@ void CodeGen::genCodeForIndir(GenTreeIndir* tree)
     {
         genConsumeAddress(addr);
         emit->emitInsLoadInd(ins_Load(targetType), emitTypeSize(tree), tree->gtRegNum, tree);
+    }
+
+    if (targetType == TYP_REF)
+    {
+        // test bit mask
+        // it does not like 64-bit numbers...! For now I am just using 64k aligned ptrs for testing.
+        //getEmitter ()->emitIns_R_I (INS_test, EA_PTRSIZE, REG_RAX, 0x1000000000000);
+        // Can't do this either because right now bt instruction does not support reg, imm.......
+        //getEmitter ()->emitIns_R_I (INS_bt, EA_PTRSIZE, tree->gtRegNum, 0x30);
+        getEmitter ()->emitIns_R_I (INS_test, EA_PTRSIZE, tree->gtRegNum, 0x1);
+        BasicBlock* sp_check = genCreateTempLabel ();
+        getEmitter ()->emitIns_J (INS_je, sp_check);
+
+        // need to handle other cases too... or maybe this is the only case we need to handle?
+        if (addr->OperIs (GT_LEA))
+        {
+            GenTreeAddrMode* lea = addr->AsAddrMode ();
+            if (lea->Base ())
+            {
+                emitAttr size = emitTypeSize (lea);
+                regNumber regNum = lea->gtRegNum;
+                int offset = lea->Offset ();
+#ifdef DEBUG
+                printf ("size is %d, reg: %d, offset: %d\n", (int)size, (int)regNum, offset);
+#endif //DEBUG
+                genLeaInstruction (lea, REG_RCX);
+            }
+        }
+
+        // We just need to add the offset to rcx and call the helper.
+        CorInfoHelpFunc helper = CORINFO_HELP_LOAD_REF;
+        genEmitHelperCall (helper,
+            0,           // argSize
+            EA_PTRSIZE); // retSize
+
+        // Need to do mov reg, rax if reg is not already rax.
+        if (tree->gtRegNum != REG_RAX)
+        {
+            getEmitter ()->emitIns_R_R (INS_mov, EA_PTRSIZE, tree->gtRegNum, REG_RAX);
+        }
+        genDefineTempLabel (sp_check);
     }
 
     genProduceReg(tree);
@@ -6081,6 +6123,21 @@ void CodeGen::genLeaInstruction(GenTreeAddrMode* lea)
     }
 
     genProduceReg(lea);
+}
+
+void CodeGen::genLeaInstruction (GenTreeAddrMode* lea, regNumber regNum)
+{
+    emitAttr size = emitTypeSize (lea);
+    // the gtDebugFlags already has GTF_DEBUG_NODE_CG_CONSUMED set so it gets an assert in 
+    // genCheckConsumeNode.
+    //genConsumeOperands (lea);
+
+    if (lea->Base ())
+    {
+        getEmitter ()->emitIns_R_AR (INS_lea, size, regNum, lea->Base ()->gtRegNum, lea->Offset ());
+    }
+
+    genProduceReg (lea);
 }
 
 //-------------------------------------------------------------------------------------------

@@ -1621,6 +1621,34 @@ static void TestSEHGuardPageRestore()
 }
 #endif // _DEBUG
 
+#ifdef _DEBUG
+void CheckForInterestingMethod(char* methodName)
+{
+    char* nameToFind = "GCRefTestInstruction";
+    // this method uses rcx already so it's not working yet
+    //char* nameToFind = "GetEncoder";
+    int methodNameLen = (int)strlen (methodName);
+    int nameLen = (int)strlen (nameToFind);
+    if (methodNameLen >= nameLen)
+    {
+        char* currentMethodNameStart = methodName + (methodNameLen - nameLen);
+
+        while (*currentMethodNameStart != '\0')
+        {
+            if (*currentMethodNameStart != *nameToFind)
+                break;
+            currentMethodNameStart++;
+            nameToFind++;
+        }
+
+        if (*currentMethodNameStart == '\0')
+        {
+            DebugBreak();
+        }
+    }
+}
+#endif //_DEBUG
+
 // Separated out the body of PreStubWorker for the case where we don't have a frame.
 //
 // Note that pDispatchingMT may not actually be the MT that is indirected through.
@@ -1671,6 +1699,8 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT)
 
     LOG((LF_CLASSLOADER, LL_INFO10000, "In PreStubWorker for %s::%s\n",
                 m_pszDebugClassName, m_pszDebugMethodName));
+
+    CheckForInterestingMethod ((char*)m_pszDebugMethodName);
 
     // This is a nice place to test out having some fatal EE errors. We do this only in a checked build, and only
     // under the InjectFatalError key.

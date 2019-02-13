@@ -1021,6 +1021,7 @@ private:
 
     // Helpers for getKillSetForNode().
     regMaskTP getKillSetForStoreInd(GenTreeStoreInd* tree);
+    regMaskTP getKillSetForInd (GenTreeIndir* tree);
     regMaskTP getKillSetForShiftRotate(GenTreeOp* tree);
     regMaskTP getKillSetForMul(GenTreeOp* tree);
     regMaskTP getKillSetForCall(GenTreeCall* call);
@@ -1559,6 +1560,7 @@ private:
     int BuildStoreLoc(GenTreeLclVarCommon* tree);
     int BuildIndir(GenTreeIndir* indirTree);
     int BuildGCWriteBarrier(GenTree* tree);
+    int BuildGCReadBarrier (GenTree* tree);
     int BuildCast(GenTreeCast* cast);
 
 #if defined(_TARGET_XARCH_)

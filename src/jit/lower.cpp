@@ -105,6 +105,8 @@ GenTree* Lowering::LowerNode(GenTree* node)
     switch (node->gtOper)
     {
         case GT_IND:
+            //if (node->TypeGet () == TYP_REF)
+            //    DebugBreak ();
             TryCreateAddrMode(LIR::Use(BlockRange(), &node->gtOp.gtOp1, node), true);
             ContainCheckIndir(node->AsIndir());
             break;

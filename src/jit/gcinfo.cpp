@@ -299,6 +299,186 @@ bool GCInfo::gcIsWriteBarrierStoreIndNode(GenTree* op)
 }
 
 /*****************************************************************************/
+
+GCInfo::ReadBarrierForm GCInfo::gcIsReadBarrierCandidate (GenTree* tgt)
+{
+    /* Are we storing a GC ptr? */
+
+    if (!varTypeIsGC (tgt->TypeGet ()))
+    {
+        return RBF_NoBarrier;
+    }
+
+    /* Where are we storing into? */
+
+    tgt = tgt->gtEffectiveVal ();
+
+    switch (tgt->gtOper)
+    {
+    case GT_STOREIND:
+    case GT_IND: /* Could be the managed heap */
+        if (tgt->TypeGet () == TYP_BYREF)
+        {
+            // Byref values cannot be in managed heap.
+            // This case occurs for Span<T>.
+            return RBF_NoBarrier;
+        }
+        return gcReadBarrierFormFromTargetAddress (tgt->gtOp.gtOp1);
+
+    case GT_LEA:
+        return gcReadBarrierFormFromTargetAddress (tgt->AsAddrMode ()->Base ());
+
+    case GT_ARR_ELEM: /* Definitely in the managed heap */
+    case GT_CLS_VAR:
+        return RBF_Barrier;
+
+    case GT_LCL_VAR: /* Definitely not in the managed heap  */
+    case GT_LCL_FLD:
+    case GT_STORE_LCL_VAR:
+    case GT_STORE_LCL_FLD:
+        return RBF_NoBarrier;
+
+    default:
+        break;
+    }
+
+    assert (!"Missing case in gcIsReadBarrierCandidate");
+
+    return RBF_NoBarrier;
+}
+
+bool GCInfo::gcIsReadBarrierIndNode (GenTree* op)
+{
+    assert (op->OperIs (GT_IND));
+
+    return gcIsReadBarrierCandidate (op) != RBF_NoBarrier;
+}
+
+GCInfo::ReadBarrierForm GCInfo::gcReadBarrierFormFromTargetAddress (GenTree* tgtAddr)
+{
+    GCInfo::ReadBarrierForm result = GCInfo::RBF_Barrier; // Default case, we have no information.
+
+                                                          // If we store through an int to a GC_REF field, we'll assume that needs to use a checked barriers.
+                                                          // But why would we??
+    if (tgtAddr->TypeGet () == TYP_I_IMPL)
+    {
+        return GCInfo::RBF_Barrier; // Why isn't this GCInfo::RBF_NoBarrier?
+    }
+
+    // Otherwise...
+    assert (tgtAddr->TypeGet () == TYP_BYREF);
+    bool simplifiedExpr = true;
+    while (simplifiedExpr)
+    {
+        simplifiedExpr = false;
+
+        tgtAddr = tgtAddr->gtSkipReloadOrCopy ();
+
+        while (tgtAddr->OperGet () == GT_ADDR && tgtAddr->gtOp.gtOp1->OperGet () == GT_IND)
+        {
+            tgtAddr = tgtAddr->gtOp.gtOp1->gtOp.gtOp1;
+            simplifiedExpr = true;
+            assert (tgtAddr->TypeGet () == TYP_BYREF);
+        }
+        // For additions, one of the operands is a byref or a ref (and the other is not).  Follow this down to its
+        // source.
+        while (tgtAddr->OperGet () == GT_ADD || tgtAddr->OperGet () == GT_LEA)
+        {
+            if (tgtAddr->OperGet () == GT_ADD)
+            {
+                if (tgtAddr->gtOp.gtOp1->TypeGet () == TYP_BYREF || tgtAddr->gtOp.gtOp1->TypeGet () == TYP_REF)
+                {
+                    assert (!(tgtAddr->gtOp.gtOp2->TypeGet () == TYP_BYREF || tgtAddr->gtOp.gtOp2->TypeGet () == TYP_REF));
+                    tgtAddr = tgtAddr->gtOp.gtOp1;
+                    simplifiedExpr = true;
+                }
+                else if (tgtAddr->gtOp.gtOp2->TypeGet () == TYP_BYREF || tgtAddr->gtOp.gtOp2->TypeGet () == TYP_REF)
+                {
+                    tgtAddr = tgtAddr->gtOp.gtOp2;
+                    simplifiedExpr = true;
+                }
+                else
+                {
+                    // We might have a native int. For example:
+                    //        const     int    0
+                    //    +         byref
+                    //        lclVar    int    V06 loc5  // this is a local declared "valuetype VType*"
+                    return GCInfo::RBF_NoBarrier;
+                }
+            }
+            else
+            {
+                // Must be an LEA (i.e., an AddrMode)
+                assert (tgtAddr->OperGet () == GT_LEA);
+                tgtAddr = tgtAddr->AsAddrMode ()->Base ();
+                if (tgtAddr->TypeGet () == TYP_BYREF || tgtAddr->TypeGet () == TYP_REF)
+                {
+                    simplifiedExpr = true;
+                }
+                else
+                {
+                    // We might have a native int.
+                    return GCInfo::RBF_NoBarrier;
+                }
+            }
+        }
+    }
+    if (tgtAddr->IsLocalAddrExpr () != nullptr)
+    {
+        // No need for a GC barrier when writing to a local variable.
+        return GCInfo::RBF_NoBarrier;
+    }
+    if (tgtAddr->OperGet () == GT_LCL_VAR)
+    {
+        unsigned lclNum = tgtAddr->AsLclVar ()->GetLclNum ();
+
+        LclVarDsc* varDsc = &compiler->lvaTable[lclNum];
+
+        // Instead of marking LclVar with 'lvStackByref',
+        // Consider decomposing the Value Number given to this LclVar to see if it was
+        // created using a GT_ADDR(GT_LCLVAR)  or a GT_ADD( GT_ADDR(GT_LCLVAR), Constant)
+
+        // We may have an internal compiler temp created in fgMorphCopyBlock() that we know
+        // points at one of our stack local variables, it will have lvStackByref set to true.
+        //
+        if (varDsc->lvStackByref)
+        {
+            assert (varDsc->TypeGet () == TYP_BYREF);
+            return GCInfo::RBF_NoBarrier;
+        }
+
+        // We don't eliminate for inlined methods, where we (can) know where the "retBuff" points.
+        if (!compiler->compIsForInlining () && lclNum == compiler->info.compRetBuffArg)
+        {
+            assert (compiler->info.compRetType == TYP_STRUCT); // Else shouldn't have a ret buff.
+
+                                                               // Are we assured that the ret buff pointer points into the stack of a caller?
+            if (compiler->info.compRetBuffDefStack)
+            {
+#if 0
+                // This is an optional debugging mode.  If the #if 0 above is changed to #if 1,
+                // every barrier we remove for stores to GC ref fields of a retbuff use a special
+                // helper that asserts that the target is not in the heap.
+#ifdef DEBUG
+                return RBF_NoBarrier;
+#else
+                return RBF_NoBarrier;
+#endif
+#else  // 0
+                return GCInfo::RBF_NoBarrier;
+#endif // 0
+            }
+        }
+    }
+    if (tgtAddr->TypeGet () == TYP_REF)
+    {
+        return GCInfo::RBF_Barrier;
+    }
+    // Otherwise, we have no information.
+    return GCInfo::RBF_NoBarrier;
+}
+
+/*****************************************************************************/
 /*****************************************************************************
  *
  *  Initialize the non-register pointer variable tracking logic.

@@ -329,6 +329,19 @@ public:
     // argument of a GT_IND LHS.
     WriteBarrierForm gcWriteBarrierFormFromTargetAddress(GenTree* tgtAddr);
 
+    enum ReadBarrierForm
+    {
+        RBF_NoBarrier,                     // No barrier is required
+        RBF_Barrier, 
+    };
+
+    ReadBarrierForm gcIsReadBarrierCandidate (GenTree* tgt);
+    bool gcIsReadBarrierIndNode (GenTree* op);
+
+    // Returns a ReadBarrierForm decision based on the form of "tgtAddr", which is assumed to be the
+    // argument of a GT_IND LHS.
+    ReadBarrierForm gcReadBarrierFormFromTargetAddress (GenTree* tgtAddr);
+
     //-------------------------------------------------------------------------
     //
     //  These record the info about the procedure in the info-block
