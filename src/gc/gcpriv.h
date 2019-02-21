@@ -3141,6 +3141,9 @@ public:
     size_t current_total_committed_gc_own;
 
     PER_HEAP_ISOLATED
+    size_t use_large_pages_p;
+
+    PER_HEAP_ISOLATED
     size_t last_gc_index;
 
 #ifdef SEG_MAPPING_TABLE

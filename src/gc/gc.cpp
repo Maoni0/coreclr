@@ -4271,7 +4271,7 @@ typedef struct
 
 initial_memory_details memory_details;
 
-BOOL reserve_initial_memory (size_t normal_size, size_t large_size, size_t num_heaps)
+BOOL reserve_initial_memory (size_t normal_size, size_t large_size, size_t num_heaps, bool use_large_pages_p)
 {
     BOOL reserve_success = FALSE;
 
@@ -4475,7 +4475,7 @@ heap_segment* get_initial_segment (size_t size, int h_number)
     return res;
 }
 
-void* virtual_alloc (size_t size)
+void* virtual_alloc (size_t size, bool use_large_pages_p)
 {
     size_t requested_size = size;
 
@@ -4496,6 +4496,7 @@ void* virtual_alloc (size_t size)
         flags = VirtualReserveFlags::WriteWatch;
     }
 #endif // !FEATURE_USE_SOFTWARE_WRITE_WATCH_FOR_GC_HEAP
+    // if use_large_pages_p is true, call GCToOSInterface::VirtualCommit instead.
     void* prgmem = GCToOSInterface::VirtualReserve (requested_size, card_size * card_word_width, flags);
     void *aligned_mem = prgmem;
 
@@ -9308,7 +9309,7 @@ heap_segment* gc_heap::make_heap_segment (uint8_t* new_pages, size_t size, int h
     heap_segment_mem (new_segment) = start;
     heap_segment_used (new_segment) = start;
     heap_segment_reserved (new_segment) = new_pages + size;
-    heap_segment_committed (new_segment) = new_pages + initial_commit;
+    heap_segment_committed (new_segment) = (use_large_pages_p ?  heap_segment_reserved (new_segment) : (new_pages + initial_commit));
     init_heap_segment (new_segment);
     dprintf (2, ("Creating heap segment %Ix", (size_t)new_segment));
     return new_segment;
@@ -10108,12 +10109,15 @@ HRESULT gc_heap::initialize_gc (size_t segment_size,
     block_count = 1;
 #endif //MULTIPLE_HEAPS
 
+    use_large_pages_p = false;
+
     if (heap_hard_limit)
     {
         check_commit_cs.Initialize();
+        use_large_pages_p = GCConfig::UseLargePages();
     }
 
-    if (!reserve_initial_memory(segment_size,heap_size,block_count))
+    if (!reserve_initial_memory (segment_size, heap_size, block_count, use_large_pages_p))
         return E_OUTOFMEMORY;
 
 #ifdef CARD_BUNDLE
