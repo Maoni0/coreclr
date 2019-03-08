@@ -81,6 +81,11 @@ inline void FATAL_GC_ERROR()
 
 #define BACKGROUND_GC   //concurrent background GC (requires WRITE_WATCH)
 
+// Currently this does not work for Server GC.
+#if defined (BACKGROUND_GC) && defined (_WIN64) && !defined (SERVER_GC)
+#define OWL_GC
+#endif
+
 #ifdef SERVER_GC
 #define MH_SC_MARK //scalable marking
 //#define SNOOP_STATS //diagnostic
@@ -206,6 +211,13 @@ void GCLogConfig (const char *fmt, ... );
 #define MAX_NUM_FREE_SPACES 200 
 #define MIN_NUM_FREE_SPACES 5 
 
+#define NUM_GEN2_ALIST (12)
+#ifdef BIT64
+#define BASE_GEN2_ALIST (1*256)
+#else
+#define BASE_GEN2_ALIST (1*128)
+#endif // BIT64
+
 //Please leave these definitions intact.
 // hosted api
 #ifdef memcpy
@@ -255,6 +267,10 @@ const int policy_expand  = 2;
 #define JOIN_LOG (DT_LOG_0 + 4)
 #define SPINLOCK_LOG (DT_LOG_0 + 5)
 #define SNOOP_LOG (DT_LOG_0 + 6)
+#define OGC_LOG_0 (DT_LOG_0 + 7)
+#define OGC_LOG_1 (DT_LOG_0 + 8)
+#define OGC_LOG_2 (DT_LOG_0 + 9)
+#define OGC_LOG_TIME (DT_LOG_0 + 10)
 
 #ifndef DACCESS_COMPILE
 
@@ -346,6 +362,86 @@ class gc_heap;
 class exclusive_sync;
 class recursive_gc_sync;
 #endif //BACKGROUND_GC
+
+#ifdef OWL_GC
+
+// We divide the segments into regions. For each region BGC sweep will calculate 
+// the fragmentation info as it goes through each region on each segment for SOH.
+// This info is then used to select CRs (compact regions).
+// 
+// Note that I am recording the pinned info but it's currently not used. We are 
+// introducing a pinned heap so there will be very few pins on the normal heap.
+// For now this info is just for instrumentation purpose. Still, as long as we 
+// can't eliminate pins on normal heap we will need to worry about them.
+// 
+// TODO: We are moving the heaps to regions (for many other reasons) instead of 
+// segments. When that's done we wouldn't need to worry about objects straddling 
+// region boundaries. 
+// 
+#define ogc_region_size (4*1024*1024)
+#define ogc_min_num_free_in_region 5
+
+// A note on pins - we are moving to a pinned heap so on the normal heap
+// hopefully we have very few pins so pins shouldn't contribute to the 
+// CR decision.
+struct region_free_info
+{
+	int num_pins;
+	int size_pinned_plugs;
+    int free_list_space;
+    int num_added_list;
+    int free_obj_space;
+    int num_added_obj;
+};
+
+// This is for when we know there can't be that many so no need to have size_t.
+// For example, we use this to store free list info for a CR.
+struct small_free_list_info
+{
+    int num_items;
+    int total_size;
+};
+
+struct free_list_info
+{
+    size_t num_items;
+    size_t total_size;
+};
+
+// Since a region is not necessarily ogc_region_size bytes - the last region in a segment
+// can be smaller. Also we can have objects that straddle 2 regions.
+struct compact_region_info
+{
+    // This is the first object that's not free in the region. Then after
+    // we remove the free items from this region we set it to the first
+    // free object after that. This is so that we have enough space for
+    // plan phase.
+    uint8_t* start;
+    // This is object that intersects the end of the region, can be free.
+    // Although maybe it should be non free...
+    uint8_t* end;
+
+	heap_segment* seg;
+    uint8_t* region_start;
+    size_t incoming_refs_count;
+    // This is the free list info before we compact this region.
+    // We need to save it so we can calculate the compact efficiency.
+    small_free_list_info saved_free_list_info[NUM_GEN2_ALIST];
+    //BOOL processed_p;
+
+    void init_free_list()
+    {
+        memset (saved_free_list_info, 0, sizeof (saved_free_list_info));
+    }
+
+    void add_free_item (int index, size_t size)
+    {
+        (saved_free_list_info[index].num_items)++;
+        saved_free_list_info[index].total_size += (int)size;
+    }
+};
+
+#endif //OWL_GC
 
 // The following 2 modes are of the same format as in clr\src\bcl\system\runtime\gcsettings.cs
 // make sure you change that one if you change this one!
@@ -1183,7 +1279,8 @@ public:
     static
     heap_segment* make_heap_segment (uint8_t* new_pages,
                                      size_t size, 
-                                     int h_number);
+                                     int h_number,
+                                     bool loh_p);
     static
     l_heap* make_large_heap (uint8_t* new_pages, size_t size, BOOL managed);
 
@@ -1358,7 +1455,7 @@ protected:
     PER_HEAP
     void concurrent_print_time_delta (const char* msg);
     PER_HEAP
-    void free_list_info (int gen_num, const char* msg);
+    void print_fragmentation_info (int gen_num, const char* msg);
 
     // in svr GC on entry and exit of this method, the GC threads are not 
     // synchronized
@@ -2002,7 +2099,6 @@ protected:
 #endif //MH_SC_MARK
 
 #ifdef BACKGROUND_GC
-
     PER_HEAP
     BOOL background_marked (uint8_t* o);
     PER_HEAP
@@ -2085,6 +2181,30 @@ protected:
     void verify_mark_bits_cleared (uint8_t* obj, size_t s);
     PER_HEAP
     void clear_all_mark_array();
+
+#ifdef OWL_GC
+    PER_HEAP
+    void ogc_init_region_free_info (heap_segment* seg);
+    PER_HEAP
+    void ogc_init_region_free_info();
+
+	PER_HEAP
+	void ogc_update_pinned (region_free_info* free_info, size_t size);
+	PER_HEAP
+	void ogc_add_boundary_pinned (heap_segment* seg, 
+							      uint8_t* start, uint8_t* end, 
+							      size_t index, size_t index_end);
+    // This is when BGC sweep is adding free items.
+    PER_HEAP
+    void ogc_update_free_item (region_free_info* rfi, size_t item_size);
+    PER_HEAP
+    void ogc_add_boundary_free_item (heap_segment* seg,
+                                     uint8_t* free_item_start,
+                                     uint8_t* free_item_end,
+                                     size_t index,
+                                     size_t index_end);
+#endif //OWL_GC
+
 #endif //BACKGROUND_GC
 
     PER_HEAP
@@ -3607,12 +3727,6 @@ protected:
     PER_HEAP 
     alloc_list loh_alloc_list[NUM_LOH_ALIST-1];
 
-#define NUM_GEN2_ALIST (12)
-#ifdef BIT64
-#define BASE_GEN2_ALIST (1*256)
-#else
-#define BASE_GEN2_ALIST (1*128)
-#endif // BIT64
     PER_HEAP
     alloc_list gen2_alloc_list[NUM_GEN2_ALIST-1];
 
@@ -4395,6 +4509,13 @@ public:
     size_t          flags;
     PTR_heap_segment next;
     uint8_t*        background_allocated;
+
+#ifdef OWL_GC
+    region_free_info* region_free_info_start;
+    // num of regions we stored free info for.
+    int               num_regions;
+#endif //OWL_GC
+
 #ifdef MULTIPLE_HEAPS
     gc_heap*        heap;
 #endif //MULTIPLE_HEAPS
@@ -4443,7 +4564,18 @@ uint8_t*& heap_segment_allocated (heap_segment* inst)
 {
   return inst->allocated;
 }
-
+#ifdef OWL_GC
+inline
+region_free_info*& heap_segment_region_free_info_start (heap_segment* inst)
+{
+    return inst->region_free_info_start;
+}
+inline
+int& heap_segment_num_regions (heap_segment* inst)
+{
+    return inst->num_regions;
+}
+#endif //OWL_GC
 inline
 BOOL heap_segment_read_only_p (heap_segment* inst)
 {

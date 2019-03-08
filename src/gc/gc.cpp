@@ -431,6 +431,21 @@ int relative_index_power2_free_space (size_t power2)
 }
 
 #ifdef BACKGROUND_GC
+
+#ifdef OWL_GC
+inline
+uint8_t* align_on_region (uint8_t* add)
+{
+    return (uint8_t*)(((size_t)add + ogc_region_size - 1) & ~(ogc_region_size - 1));
+}
+
+inline
+BOOL is_aligned_on_region (uint8_t* add)
+{
+    return ((size_t)add == ((size_t)(add) & ~(ogc_region_size - 1)));
+}
+#endif //OWL_GC
+
 uint32_t bgc_alloc_spin_count = 140;
 uint32_t bgc_alloc_spin_count_loh = 16;
 uint32_t bgc_alloc_spin = 2;
@@ -4467,10 +4482,10 @@ void* next_initial_memory (size_t size)
     return res;
 }
 
-heap_segment* get_initial_segment (size_t size, int h_number)
+heap_segment* get_initial_segment (size_t size, int h_number, bool loh_p)
 {
     void* mem = next_initial_memory (size);
-    heap_segment* res = gc_heap::make_heap_segment ((uint8_t*)mem, size , h_number);
+    heap_segment* res = gc_heap::make_heap_segment ((uint8_t*)mem, size , h_number, loh_p);
 
     return res;
 }
@@ -4832,7 +4847,7 @@ gc_heap::get_segment (size_t size, BOOL loh_p)
             return 0;
         }
 
-        result = gc_heap::make_heap_segment ((uint8_t*)mem, size, heap_number);
+        result = gc_heap::make_heap_segment ((uint8_t*)mem, size, heap_number, loh_p);
 
         if (result)
         {
@@ -9119,6 +9134,14 @@ retry:
 #define set_pinned(i) header(i)->SetPinned()
 #define clear_pinned(i) header(i)->GetHeader()->ClrGCBit();
 
+// OGC TO IMPL
+#ifdef OWL_GC
+//#define concurrent_pinned(i) header(i)->IsConcurrentPinned()
+//#define set_concurrent_pinned(i) header(i)->SetConcurrentPinned()
+//#define clear_concurrent_pinned(i) header(i)->ClearConcurrentPinned()
+#define concurrent_pinned(i) false
+#endif //OWL_GC
+
 inline size_t my_get_size (Object* ob)
 {
     MethodTable* mT = header(ob)->GetMethodTable();
@@ -9291,9 +9314,19 @@ int gc_heap::object_gennum_plan (uint8_t* o)
 #pragma optimize("", on)        // Go back to command line default optimizations
 #endif //_MSC_VER && _TARGET_X86_
 
-heap_segment* gc_heap::make_heap_segment (uint8_t* new_pages, size_t size, int h_number)
+heap_segment* gc_heap::make_heap_segment (uint8_t* new_pages, size_t size, int h_number, bool loh_p)
 {
     size_t initial_commit = SEGMENT_INITIAL_COMMIT;
+
+#ifdef OWL_GC
+    int max_num_regions = 0;
+    if (!loh_p)
+    {
+        max_num_regions = (int)(size / ogc_region_size);
+        segment_info_size = align_on_page (max_num_regions * sizeof (region_free_info) + sizeof (heap_segment));
+        initial_commit = segment_info_size + OS_PAGE_SIZE;
+    }
+#endif //OWL_GC
 
     //Commit the first page
     if (!virtual_commit (new_pages, initial_commit, h_number))
@@ -9323,6 +9356,9 @@ void gc_heap::init_heap_segment (heap_segment* seg)
 #ifdef BACKGROUND_GC
     heap_segment_background_allocated (seg) = 0;
     heap_segment_saved_bg_allocated (seg) = 0;
+#ifdef OWL_GC
+    heap_segment_region_free_info_start (seg) = (region_free_info*)((uint8_t*)seg + sizeof (heap_segment));
+#endif //OWL_GC
 #endif //BACKGROUND_GC
 }
 
@@ -10629,7 +10665,7 @@ gc_heap::init_gc_heap (int  h_number)
     }
 #endif //!SEG_MAPPING_TABLE
 
-    heap_segment* seg = get_initial_segment (soh_segment_size, h_number);
+    heap_segment* seg = get_initial_segment (soh_segment_size, h_number, false);
     if (!seg)
         return 0;
 
@@ -10693,7 +10729,7 @@ gc_heap::init_gc_heap (int  h_number)
     }
 #endif //!SEG_MAPPING_TABLE
     //Create the large segment generation
-    heap_segment* lseg = get_initial_segment(min_loh_segment_size, h_number);
+    heap_segment* lseg = get_initial_segment (min_loh_segment_size, h_number, true);
     if (!lseg)
         return 0;
     lseg->flags |= heap_segment_flags_loh;
@@ -15608,7 +15644,7 @@ void gc_heap::concurrent_print_time_delta (const char* msg)
 #endif //TRACE_GC
 }
 
-void gc_heap::free_list_info (int gen_num, const char* msg)
+void gc_heap::print_fragmentation_info (int gen_num, const char* msg)
 {
     UNREFERENCED_PARAMETER(gen_num);
 #if defined (BACKGROUND_GC) && defined (TRACE_GC)
@@ -15700,7 +15736,7 @@ void gc_heap::gc1()
     bgc_alloc_lock->check();
 #endif //BACKGROUND_GC
 
-    free_list_info (max_generation, "beginning");
+    print_fragmentation_info (max_generation, "beginning");
 
     vm_heap->GcCondemnedGeneration = settings.condemned_generation;
 
@@ -15738,10 +15774,10 @@ void gc_heap::gc1()
 
             concurrent_print_time_delta ("RW");
             background_mark_phase();
-            free_list_info (max_generation, "after mark phase");
+            print_fragmentation_info (max_generation, "after mark phase");
             
             background_sweep();
-            free_list_info (max_generation, "after sweep phase");
+            print_fragmentation_info (max_generation, "after sweep phase");
         }
         else
 #endif //BACKGROUND_GC
@@ -15781,7 +15817,7 @@ void gc_heap::gc1()
         dynamic_data* dd = dynamic_data_of (n);
         dd_gc_elapsed_time (dd) = end_gc_time - dd_time_clock (dd);
 
-        free_list_info (max_generation, "after computing new dynamic data");
+        print_fragmentation_info (max_generation, "after computing new dynamic data");
 
         gc_history_per_heap* current_gc_data_per_heap = get_gc_data_per_heap();
 
@@ -15797,7 +15833,7 @@ void gc_heap::gc1()
     else
 #endif //BACKGROUND_GC
     {
-        free_list_info (max_generation, "end");
+        print_fragmentation_info (max_generation, "end");
         for (int gen_number = 0; gen_number <= n; gen_number++)
         {
             dynamic_data* dd = dynamic_data_of (gen_number);
@@ -15818,7 +15854,7 @@ void gc_heap::gc1()
 
         get_gc_data_per_heap()->maxgen_size_info.running_free_list_efficiency = (uint32_t)(generation_allocator_efficiency (generation_of (max_generation)) * 100);
 
-        free_list_info (max_generation, "after computing new dynamic data");
+        print_fragmentation_info (max_generation, "after computing new dynamic data");
         
         if (heap_number == 0)
         {
@@ -31884,6 +31920,123 @@ void gc_heap::background_ephemeral_sweep()
     generation_allocator (youngest_gen)->copy_with_no_repair (&youngest_free_list);
 }
 
+#ifdef OWL_GC
+
+void gc_heap::ogc_init_region_free_info (heap_segment* seg)
+{
+    dprintf (OGC_LOG_0, ("clearing region free info for seg %Ix", seg));
+    region_free_info* free_info = heap_segment_region_free_info_start (seg);
+    int num_regions = (int)((align_on_region (heap_segment_reserved (seg)) - (uint8_t*)seg) / ogc_region_size);
+    memset (free_info, 0, (sizeof (region_free_info) * num_regions));
+}
+
+void gc_heap::ogc_init_region_free_info()
+{
+    heap_segment* seg = heap_segment_rw (generation_start_segment (generation_of (max_generation)));
+
+    while (seg)
+    {
+        ogc_init_region_free_info (seg);
+        seg = heap_segment_next (seg);
+    }
+}
+
+//inline
+void gc_heap::ogc_update_pinned (region_free_info* free_info, size_t size)
+{
+    free_info->num_pins++;
+    free_info->size_pinned_plugs += (int)size;
+    dprintf (OGC_LOG_2, ("region pins: %d", free_info->num_pins));
+}
+
+// ECO TODO: see comments for ogc_add_boundary_free_item.
+void gc_heap::ogc_add_boundary_pinned (heap_segment* seg, 
+                                       uint8_t* start, uint8_t* end, 
+                                       size_t index, size_t index_end)
+{
+    uint8_t* regions = (uint8_t*)seg;
+    region_free_info* free_info = heap_segment_region_free_info_start (seg);
+    size_t current_plug_size;
+    uint8_t* current_plug_start = start;
+
+    while (index < index_end)
+    {
+        uint8_t* next_region = regions + (index + 1) * ogc_region_size;
+
+        current_plug_size = next_region - current_plug_start;
+        dprintf (OGC_LOG_2, ("spliting, adding 1(%Id) to region %d", current_plug_size, index));
+        ogc_update_pinned (&free_info[index], current_plug_size);
+
+        index++;
+        current_plug_start = next_region;
+    }
+
+    dprintf (OGC_LOG_2, ("adding rest 1(%Id) to region %d", (end - current_plug_start), index));
+    ogc_update_pinned (&free_info[index], (end - current_plug_start));
+}
+
+//inline
+void gc_heap::ogc_update_free_item (region_free_info* rfi, size_t item_size)
+{
+    if (item_size >= min_free_list)
+    {
+        rfi->free_list_space += (int)item_size;
+        rfi->num_added_list++;
+        dprintf (OGC_LOG_2, ("region has %d free items, %d total", rfi->num_added_list, rfi->free_list_space));
+    }
+    else
+    {
+        rfi->free_obj_space += (int)item_size;
+        rfi->num_added_obj++;
+        dprintf (OGC_LOG_2, ("region has %d free objs, %d total", rfi->num_added_obj, rfi->free_obj_space));
+    }
+}
+
+// OGC TODO: It's questionable to add boundary free items because we will not include the partial free object
+// in our compaction anyway. We should just not add the partial ones. If part of a free item spans a whole region
+// we do want to update that region with the info so we get the # of free items correctly for that region.
+// 
+// This will not a problem when we move to regions though so I'm keeping the code as is for now.
+void gc_heap::ogc_add_boundary_free_item (heap_segment* seg,
+                                          uint8_t* free_item_start,
+                                          uint8_t* free_item_end,
+                                          size_t index,
+                                          size_t index_end)
+{
+    uint8_t* regions = (uint8_t*)seg;
+    region_free_info* free_info = heap_segment_region_free_info_start (seg);
+    uint8_t* current_free_start = free_item_start;
+    size_t current_free_item_size;
+    size_t free_size = free_item_end - free_item_start;
+
+    // We just add it to the first region if it's too small.
+    if (free_size < min_free_list)
+    {
+        free_info[index].free_obj_space += (int)free_size;
+        free_info[index].num_added_obj++;
+        return;
+    }
+
+    while (index < index_end)
+    {
+        uint8_t* next_region = regions + (index + 1) * ogc_region_size;
+
+        current_free_item_size = next_region - current_free_start;
+        dprintf (OGC_LOG_2, ("spliting, adding %Id to region %d", current_free_item_size, index));
+        ogc_update_free_item (&free_info[index], current_free_item_size);
+
+        index++;
+        current_free_start = next_region;
+    }
+
+    dprintf (OGC_LOG_2, ("adding rest %Id to region %d", (free_item_end - current_free_start), index));
+    ogc_update_free_item (&free_info[index], (free_item_end - current_free_start));
+}
+
+#endif //OWL_GC
+
+// TODO: We should thread LOH first - it's much faster to thread LOH so we can let the threads
+// waiting to allocate large objects go much sooner.
 void gc_heap::background_sweep()
 {
     generation* gen         = generation_of (max_generation);
@@ -32022,6 +32175,13 @@ void gc_heap::background_sweep()
     int current_num_objs = 0;
     heap_segment* next_seg = 0;
 
+#ifdef OWL_GC
+    ogc_init_region_free_info();
+    uint8_t* next_region_start = o + ogc_region_size;
+    size_t current_region_index = (o - (uint8_t*)seg) / ogc_region_size;
+    region_free_info* free_info = heap_segment_region_free_info_start (seg);
+#endif //OWL_GC
+
     while (1)
     {
         if (o >= end)
@@ -32032,6 +32192,11 @@ void gc_heap::background_sweep()
             }
             else
             {
+#ifdef OWL_GC
+                heap_segment_num_regions (seg) = (int)current_region_index + 1;
+                dprintf (OGC_LOG_2, ("setting regions of seg %Ix to %d", 
+                    seg, heap_segment_num_regions (seg)));
+#endif //OWL_GC
                 next_seg = heap_segment_prev (fseg, seg);
             }
 
@@ -32141,6 +32306,15 @@ void gc_heap::background_sweep()
                 current_sweep_pos = o;
                 next_sweep_obj = o;
                 
+#ifdef OWL_GC
+                if (gen != large_object_generation)
+                {
+                    next_region_start = o + ogc_region_size;
+                    current_region_index = (o - (uint8_t*)seg) / ogc_region_size;
+                    free_info = heap_segment_region_free_info_start (seg);
+                }
+#endif //OWL_GC
+
                 allow_fgc();
                 end = background_next_end (seg, (gen == large_object_generation));
                 dprintf (2, ("bgs: seg: %Ix, [%Ix, %Ix[%Ix", (size_t)seg,
@@ -32153,10 +32327,37 @@ void gc_heap::background_sweep()
         if ((o < end) && background_object_marked (o, TRUE))
         {
             plug_start = o;
+            size_t free_item_size = plug_start-plug_end;
+
             if (gen == large_object_generation)
             {
                 dprintf (2, ("loh fr: [%Ix-%Ix[(%Id)", plug_end, plug_start, plug_start-plug_end));
             }
+#ifdef OWL_GC
+            else
+            {
+                dprintf (OGC_LOG_2, ("FI: %Ix->%Ix(%Id), RI is %d(%Ix->%Ix)", 
+                    plug_end, plug_start, free_item_size, current_region_index,
+                    (uint8_t*)seg + (current_region_index * ogc_region_size),
+                    (uint8_t*)seg + ((current_region_index + 1) * ogc_region_size)));
+                if (plug_start <= next_region_start)
+                {
+                    dprintf (OGC_LOG_2, ("still in RI %d, adding %Id", current_region_index, free_item_size));
+                    ogc_update_free_item (&free_info[current_region_index], free_item_size);
+                }
+                else
+                {
+                    size_t region_index_end = (plug_end - (uint8_t*)seg) / ogc_region_size;
+                    size_t region_index = (plug_start - (uint8_t*)seg) / ogc_region_size;
+                    dprintf (OGC_LOG_2, ("free item start index: %Id, end index: %Id", region_index_end, region_index)); 
+                    ogc_add_boundary_free_item (seg, plug_end, plug_start, region_index_end, region_index);
+                    dprintf (OGC_LOG_2, ("last RI %d, currrent RI %d", current_region_index, region_index));
+                    current_region_index = region_index;
+                    next_region_start = (uint8_t*)seg + (current_region_index + 1) * ogc_region_size;
+                    dprintf (OGC_LOG_2, ("update RI to %Id, next region will be %Ix", current_region_index, next_region_start));
+                }
+            }
+#endif //OWL_GC
 
             thread_gap (plug_end, plug_start-plug_end, gen);
             if (gen != large_object_generation)
@@ -32172,6 +32373,34 @@ void gc_heap::background_sweep()
 
             while (m)
             {
+#ifdef OWL_GC
+                if ((gen != large_object_generation) && concurrent_pinned (o))
+                {
+                    size_t pinned_obj_len = Align (size (o));
+                    uint8_t* pinned_obj_end = o + pinned_obj_len;
+                    dprintf (OGC_LOG_2, ("Pobj: %Ix->%Ix(%Id), RI is %d(%Ix->%Ix)", 
+                        o, pinned_obj_end, pinned_obj_len, current_region_index,
+                        (uint8_t*)seg + (current_region_index * ogc_region_size),
+                        next_region_start));
+                    if (pinned_obj_end <= next_region_start)
+                    {
+                        dprintf (OGC_LOG_2, ("still in RI %d, adding pin %Id", 
+                            current_region_index, pinned_obj_len));
+                        ogc_update_pinned (&free_info[current_region_index], pinned_obj_len);
+                    }
+                    else
+                    {
+                        size_t region_index_end = (pinned_obj_end - (uint8_t*)seg) / ogc_region_size;
+                        dprintf (OGC_LOG_2, ("pin start index: %Id, end index: %Id, adding boundary pin %Id", 
+                            current_region_index, region_index_end, pinned_obj_len)); 
+                        ogc_add_boundary_pinned (seg, o, pinned_obj_end, current_region_index, region_index_end);
+                        current_region_index = region_index_end;
+                        next_region_start = (uint8_t*)seg + (current_region_index + 1) * ogc_region_size;
+                        dprintf (OGC_LOG_2, ("update RI to %Id, next region will be %Ix", current_region_index, next_region_start));
+                    }
+                }
+#endif //OWL_GC
+
                 next_sweep_obj = o + Align(size (o), align_const);
                 current_num_objs++;
                 if (current_num_objs >= num_objs)
