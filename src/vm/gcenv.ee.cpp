@@ -454,7 +454,7 @@ DWORD WINAPI BackgroundThreadStub(void* arg)
 //
 
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
-inline BOOL ShouldTrackMovementForProfilerOrEtw()
+inline bool ShouldTrackSurvivorsForProfilerOrEtw()
 {
 #ifdef GC_PROFILING
     if (CORProfilerTrackGC())
@@ -463,6 +463,15 @@ inline BOOL ShouldTrackMovementForProfilerOrEtw()
 
 #ifdef FEATURE_EVENT_TRACE
     if (ETW::GCLog::ShouldTrackMovementForEtw())
+        return true;
+#endif
+
+    return false;
+}
+inline bool ShouldTrackSurvivorsInCompactingGCsForProfiler()
+{
+#ifdef GC_PROFILING
+    if (CORProfilerTrackMediumGC())
         return true;
 #endif
 
@@ -788,10 +797,11 @@ void WalkMovedReferences(uint8_t* begin, uint8_t* end,
                                !fBGC);
 }
 
-void GCToEEInterface::DiagWalkSurvivors(void* gcContext)
+void GCToEEInterface::DiagWalkSurvivors(void* gcContext, bool fCompacting)
 {
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
-    if (ShouldTrackMovementForProfilerOrEtw())
+    if (ShouldTrackSurvivorsForProfilerOrEtw() || 
+        (fCompacting && ShouldTrackSurvivorsInCompactingGCsForProfiler()))
     {
         size_t context = 0;
         ETW::GCLog::BeginMovedReferences(&context);
@@ -804,7 +814,7 @@ void GCToEEInterface::DiagWalkSurvivors(void* gcContext)
 void GCToEEInterface::DiagWalkLOHSurvivors(void* gcContext)
 {
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
-    if (ShouldTrackMovementForProfilerOrEtw())
+    if (ShouldTrackSurvivorsForProfilerOrEtw())
     {
         size_t context = 0;
         ETW::GCLog::BeginMovedReferences(&context);
@@ -817,7 +827,7 @@ void GCToEEInterface::DiagWalkLOHSurvivors(void* gcContext)
 void GCToEEInterface::DiagWalkBGCSurvivors(void* gcContext)
 {
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
-    if (ShouldTrackMovementForProfilerOrEtw())
+    if (ShouldTrackSurvivorsForProfilerOrEtw())
     {
         size_t context = 0;
         ETW::GCLog::BeginMovedReferences(&context);

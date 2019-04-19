@@ -255,7 +255,7 @@ void GCToEEInterface::DiagWalkFReachableObjects(void* gcContext)
 {
 }
 
-void GCToEEInterface::DiagWalkSurvivors(void* gcContext)
+void GCToEEInterface::DiagWalkSurvivors(void* gcContext, bool fCompacting)
 {
 }
 
