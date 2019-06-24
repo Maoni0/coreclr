@@ -40,6 +40,13 @@ inline void FATAL_GC_ERROR()
     GCToEEInterface::HandleFatalError((unsigned int)COR_E_EXECUTIONENGINE);
 }
 
+#ifdef MULTIPLE_HEAPS
+// This turns on instrumentation that collects info for heap balancing.
+// Define it and make sure you have HEAP_BALANCE_LOG level logging (only)
+// enabled.
+//#define HEAP_BALANCE_INTRUMENTATION
+#endif //MULTIPLE_HEAPS
+
 #ifdef _MSC_VER
 #pragma inline_depth(20)
 #endif
@@ -255,6 +262,13 @@ const int policy_expand  = 2;
 #define SPINLOCK_LOG (DT_LOG_0 + 5)
 #define SNOOP_LOG (DT_LOG_0 + 6)
 
+// NOTE!
+// This particular one is special and needs to be well formated because we 
+// do post processing on it with our tooling. If you need to add something 
+// temporarily isn't handled by tooling prefix it with TEMP so that line
+// will be written to the results as is.
+#define HEAP_BALANCE_LOG (DT_LOG_0 + 7)
+
 #ifndef DACCESS_COMPILE
 
 #ifdef SIMPLE_DPRINTF
@@ -267,6 +281,7 @@ void GCLog (const char *fmt, ... );
 //#define dprintf(l,x) {if (trace_gc && ((l <= 2) || (l == BGC_LOG) || (l==GTC_LOG))) {GCLog x;}}
 //#define dprintf(l,x) {if ((l == 1) || (l == 2222)) {GCLog x;}}
 #define dprintf(l,x) {if ((l <= 1) || (l == GTC_LOG)) {GCLog x;}}
+//#define dprintf(l,x) {if (l == HEAP_BALANCE_LOG) {GCLog x;}}
 //#define dprintf(l,x) {if ((l==GTC_LOG) || (l <= 1)) {GCLog x;}}
 //#define dprintf(l,x) {if (trace_gc && ((l <= print_level) || (l==GTC_LOG))) {GCLog x;}}
 //#define dprintf(l,x) {if (l==GTC_LOG) {printf ("\n");printf x ; fflush(stdout);}}
@@ -1222,6 +1237,12 @@ public:
                              uint32_t flags);
 
 #ifdef MULTIPLE_HEAPS
+    PER_HEAP_ISOLATED
+    void hb_log_new_allocation ();
+
+    PER_HEAP_ISOLATED
+    void hb_log_balance_activities ();
+
     static
     void balance_heaps (alloc_context* acontext);
     PER_HEAP
@@ -2965,7 +2986,7 @@ public:
     GCEvent full_gc_end_event;
 
     // Full GC Notification percentages.
-    PER_HEAP_ISOLATED
+    PER_HEAP
     uint32_t fgn_maxgen_percent;
 
     PER_HEAP_ISOLATED
@@ -3014,6 +3035,13 @@ public:
     int gc_policy;  //sweep, compact, expand
 
 #ifdef MULTIPLE_HEAPS
+    // This is 
+    PER_HEAP
+    ptrdiff_t numa_allocation_running_amount;
+
+    PER_HEAP_ISOLATED
+    size_t numa_allocation_check_quantum;
+
     PER_HEAP_ISOLATED
     bool gc_thread_no_affinitize_p;
     
@@ -3091,7 +3119,7 @@ public:
 
     PER_HEAP_ISOLATED
     uint64_t total_physical_mem;
-
+    
     PER_HEAP_ISOLATED
     uint64_t entry_available_physical_mem;
 
@@ -3174,6 +3202,9 @@ public:
 
     PER_HEAP_ISOLATED
     size_t last_gc_index;
+
+    PER_HEAP_ISOLATED
+    size_t last_gc_end_time_ms;
 
 #ifdef SEG_MAPPING_TABLE
     PER_HEAP_ISOLATED

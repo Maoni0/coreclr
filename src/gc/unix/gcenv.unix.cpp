@@ -604,6 +604,18 @@ bool GCToOSInterface::VirtualCommit(void* address, size_t size, uint16_t node)
     return success;
 }
 
+// Not implemented yet - currently only used by instrumentation.
+void* GCToOSInterface::VirtualReserveNuma (size_t size, size_t alignment, uint32_t flags, uint16_t node)
+{
+    LIMITED_METHOD_CONTRACT;
+    UNREFERENCED_PARAMETER(size);
+    UNREFERENCED_PARAMETER(alignment);
+    UNREFERENCED_PARAMETER(flags);
+    UNREFERENCED_PARAMETER(node);
+
+    return 0;
+}
+
 // Decomit virtual memory range.
 // Parameters:
 //  address - starting virtual address
@@ -908,6 +920,11 @@ uint32_t GCToOSInterface::GetTotalProcessorCount()
 bool GCToOSInterface::CanEnableGCNumaAware()
 {
     return g_numaAvailable;
+}
+
+bool GCToOSInterface::CanEnableGCCPUGroups ()
+{
+    return false;
 }
 
 // Get processor number and optionally its NUMA node number for the specified heap number

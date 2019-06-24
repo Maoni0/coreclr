@@ -38,7 +38,7 @@ class GroupProcNo
 
 public:
 
-    static const uint16_t NoGroup = 0x3ff;
+    static const uint16_t NoGroup = 0;
 
     GroupProcNo(uint16_t groupProc) : m_groupProc(groupProc)
     {
@@ -46,7 +46,8 @@ public:
 
     GroupProcNo(uint16_t group, uint16_t procIndex) : m_groupProc((group << 6) | procIndex)
     {
-        assert(group <= 0x3ff);
+        // Making this the same as the # of NUMA node we support.
+        assert(group <= 0x40);
         assert(procIndex <= 0x3f);
     }
 
@@ -208,13 +209,13 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t
 #else
     PROCESSOR_NUMBER proc;
 
-    if (dstGroupProcNo.GetGroup() != GroupProcNo::NoGroup)
+    if (CPUGroupInfo::CanEnableGCCPUGroups())
     {
         proc.Group = (WORD)dstGroupProcNo.GetGroup();
         proc.Number = (BYTE)dstGroupProcNo.GetProcIndex();
         proc.Reserved = 0;
 
-        success = !!SetThreadIdealProcessorEx(GetCurrentThread(), &proc, NULL);
+        success = !!SetThreadIdealProcessorEx(GetCurrentThread (), &proc, NULL);
     }
     else
     {
@@ -235,13 +236,38 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(uint16_t srcProcNo, uint16_t
 #endif // !FEATURE_PAL
 }
 
+bool GCToOSInterface::GetCurrentThreadIdealProc(uint16_t* procNo)
+{
+    LIMITED_METHOD_CONTRACT;
+    bool success = false;
+#ifndef FEATURE_PAL
+    PROCESSOR_NUMBER proc;
+    success = !!GetThreadIdealProcessorEx(GetCurrentThread(), &proc);
+    if (success)
+    {
+        GroupProcNo groupProcNo(proc.Group, proc.Number);
+        *procNo = groupProcNo.GetCombinedValue();
+    }
+#endif //FEATURE_PAL
+    return success;
+}
+
 // Get the number of the current processor
 uint32_t GCToOSInterface::GetCurrentProcessorNumber()
 {
     LIMITED_METHOD_CONTRACT;
 
     _ASSERTE(CanGetCurrentProcessorNumber());
+
+#ifndef FEATURE_PAL
+    PROCESSOR_NUMBER proc_no_cpu_group;
+    GetCurrentProcessorNumberEx (&proc_no_cpu_group);
+
+    GroupProcNo groupProcNo(proc_no_cpu_group.Group, proc_no_cpu_group.Number);
+    return  groupProcNo.GetCombinedValue();
+#else
     return ::GetCurrentProcessorNumber();
+#endif //!FEATURE_PAL
 }
 
 // Check if the OS supports getting current processor number
@@ -378,6 +404,15 @@ bool GCToOSInterface::VirtualCommit(void* address, size_t size, uint16_t node)
     }
 }
 
+void* GCToOSInterface::VirtualReserveNuma(size_t size, size_t alignment, uint32_t flags, uint16_t node)
+{
+    LIMITED_METHOD_CONTRACT;
+    UNREFERENCED_PARAMETER(alignment);
+    UNREFERENCED_PARAMETER(flags);
+
+    return NumaNodeInfo::VirtualAllocExNuma(::GetCurrentProcess(), NULL, size, MEM_RESERVE, PAGE_READWRITE, node);
+}
+
 // Decomit virtual memory range.
 // Parameters:
 //  address - starting virtual address
@@ -493,7 +528,7 @@ bool GCToOSInterface::SetThreadAffinity(uint16_t procNo)
 #ifndef FEATURE_PAL
     GroupProcNo groupProcNo(procNo);
 
-    if (groupProcNo.GetGroup() != GroupProcNo::NoGroup)
+    if (CPUGroupInfo::CanEnableGCCPUGroups())
     {
         GROUP_AFFINITY ga;
         ga.Group = (WORD)groupProcNo.GetGroup();
@@ -935,6 +970,34 @@ bool GCToOSInterface::CanEnableGCNumaAware()
     LIMITED_METHOD_CONTRACT;
 
     return NumaNodeInfo::CanEnableGCNumaAware() != FALSE;
+}
+
+bool GCToOSInterface::GetNumaInfo(uint16_t* total_nodes, uint32_t* max_procs_per_node)
+{
+#ifndef FEATURE_PAL
+    return NumaNodeInfo::GetNumaInfo(total_nodes, (DWORD*)max_procs_per_node);
+#else
+    return false;
+#endif //!FEATURE_PAL
+}
+
+bool GCToOSInterface::GetCPUGroupInfo (uint16_t* total_groups, uint32_t* max_procs_per_group)
+{
+#ifndef FEATURE_PAL
+    return CPUGroupInfo::GetCPUGroupInfo(total_groups, (DWORD*)max_procs_per_group);
+#else
+    return false;
+#endif //!FEATURE_PAL
+}
+
+bool GCToOSInterface::CanEnableGCCPUGroups()
+{
+    LIMITED_METHOD_CONTRACT;
+#ifndef FEATURE_PAL
+    return CPUGroupInfo::CanEnableGCCPUGroups() != FALSE;
+#else
+    return false;
+#endif //!FEATURE_PAL
 }
 
 // Get processor number and optionally its NUMA node number for the specified heap number
