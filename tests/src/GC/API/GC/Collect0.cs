@@ -5,48 +5,41 @@
 
 using System;
 
-public class Test {
-	public static int Main() {
+namespace Gen0BudgetExperiment
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            int startTicks = Environment.TickCount;
+            string[] sa = new string[100 * 1000 * 1000];
 
-		int[] array = new int[25];
-		int agen1 = GC.GetGeneration(array);
+            Console.WriteLine("testing");
 
-		Console.WriteLine("Array is in generation: " + agen1);
-		
-		if(agen1 != 0) {
-			Console.WriteLine("Running under stress..");
-            return 100;
-		}
-		
-		//GC.Collect();
-
-		Object obj = new Object();
-		int ogen1 = GC.GetGeneration(obj);
-
-		Console.WriteLine("Object is in generation: " + ogen1);
-		Console.WriteLine("Collect(0)");
-		GC.Collect(0);
-		GC.Collect(0);
-
-		int agen2 = GC.GetGeneration(array);
-		int ogen2 = GC.GetGeneration(obj);
-			
-		if(agen2 > 1) {
-			Console.WriteLine("Running under stress..");
-            return 100;
-		}
-
-		Console.WriteLine("Array is in generation: {0}",agen2);
-		Console.WriteLine("Object is in generation: {0}",ogen2);
-		
-		if(agen2 == ogen2) {	 // only gen 0 was collected
-			Console.WriteLine("Test for GC.Collect(0) passed!");
-            return 100;
-		}
-
-		else {
-			Console.WriteLine("Test for GC.Collect(0) failed!");
-            return 1;
-		}
-	}
+            Random r = new Random();
+            int totalCount = 0;
+            for (int iter = 0; iter < 120; iter++)
+            {
+                int count = 0;
+                for (int i = 0; i < 1000 * 1000; i++)
+                {
+                    int j = r.Next(sa.Length);
+                    string s = new string('?', 20);
+                    if (sa[j] == null)
+                    {
+                        sa[j] = s;
+                        count++;
+                    }
+                    for (int k = 0; k < 20; k++)
+                    {
+                        s = new string('?', 25);
+                    }
+                }
+                totalCount += count;
+                Console.WriteLine("{0} objects stored in this iteration, {1} so far", count, totalCount);
+            }
+            int elapsedTicks = Environment.TickCount - startTicks;
+            Console.WriteLine("{0} seconds", elapsedTicks * 0.001);
+        }
+    }
 }

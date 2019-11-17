@@ -17093,7 +17093,7 @@ void gc_heap::gc1()
                     // apply some smoothing.
                     size_t smoothing = 3; // exponential smoothing factor
                     smoothed_desired_per_heap = desired_per_heap / smoothing + ((smoothed_desired_per_heap / smoothing) * (smoothing-1));
-                    dprintf (HEAP_BALANCE_LOG, ("TEMPsn = %Id  n = %Id", smoothed_desired_per_heap, desired_per_heap));
+                    dprintf (3333, ("TEMPsn = %Id  n = %Id", smoothed_desired_per_heap, desired_per_heap));
                     desired_per_heap = Align(smoothed_desired_per_heap, get_alignment_constant (true));
 #endif //0
 
@@ -17106,15 +17106,19 @@ void gc_heap::gc1()
                         size_t min_gc_size = dd_min_size(dd);
                         // if min GC size larger than true on die cache, then don't bother
                         // limiting the desired size
-                        if ((min_gc_size <= GCToOSInterface::GetCacheSizePerLogicalCpu(TRUE)) &&
+                        size_t cache_size = GCToOSInterface::GetCacheSizePerLogicalCpu(TRUE);
+                        if ((min_gc_size <= cache_size) &&
                             desired_per_heap <= 2*min_gc_size)
                         {
+                            dprintf (3333, ("min: %Id, *2=%Id, cache: %Id, new: %Id->%Id", 
+                                min_gc_size, (2*min_gc_size), cache_size, desired_per_heap, min_gc_size));
                             desired_per_heap = min_gc_size;
                         }
                     }
 #ifdef BIT64
                     desired_per_heap = joined_youngest_desired (desired_per_heap);
-                    dprintf (2, ("final gen0 new_alloc: %Id", desired_per_heap));
+                    dprintf (3333, ("======GC#%Id(g#%d),final gen0 new_alloc: %Id", 
+                        settings.gc_index, settings.condemned_generation, desired_per_heap));
 #endif // BIT64
                     gc_data_global.final_youngest_desired = desired_per_heap;
                 }
@@ -32396,8 +32400,8 @@ void gc_heap::init_static_data()
             max (6*1024*1024, Align(soh_segment_size/2)));
 #endif //MULTIPLE_HEAPS
 
-    dprintf (GTC_LOG, ("gen0 min: %Id, max: %Id, gen1 max: %Id",
-        gen0_min_size, gen0_max_size, gen1_max_size));
+    dprintf (3333, ("gen0 min: %Id, max: %Id (/3 = %Id), gen1 max: %Id",
+        gen0_min_size, gen0_max_size, (gen0_max_size /3), gen1_max_size));
 
     for (int i = latency_level_first; i <= latency_level_last; i++)
     {
@@ -32586,13 +32590,22 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
         }
         else
         {
+            size_t new_allocation_surv = 0;
+            size_t new_allocation_limit = 0;
+            size_t new_allocation_linear = 0;
+            size_t new_allocation_frag = 0;
+
             size_t survivors = out;
             cst = float (survivors) / float (dd_begin_data_size (dd));
             f = surv_to_growth (cst, limit, max_limit);
+            new_allocation_surv = (size_t)(f * survivors);
             new_allocation = (size_t) min (max ((f * (survivors)), min_gc_size), max_size);
+            new_allocation_limit = new_allocation;
 
             new_allocation = linear_allocation_model (allocation_fraction, new_allocation,
                                                       dd_desired_allocation (dd), dd_collection_count (dd));
+
+            new_allocation_linear = new_allocation;
 
             if (gen_number == 0)
             {
@@ -32603,7 +32616,6 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                     size_t free_space = generation_free_list_space (generation_of (gen_number));
                     // DTREVIEW - is min_gc_size really a good choice?
                     // on 64-bit this will almost always be true.
-                    dprintf (GTC_LOG, ("frag: %Id, min: %Id", free_space, min_gc_size));
                     if (free_space > min_gc_size)
                     {
                         settings.gen0_reduction_count = 2;
@@ -32613,13 +32625,18 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
                         if (settings.gen0_reduction_count > 0)
                             settings.gen0_reduction_count--;
                     }
+                    dprintf (3333, ("frag: %Id, min: %Id, rc: %d", free_space, min_gc_size, settings.gen0_reduction_count));
                 }
                 if (settings.gen0_reduction_count > 0)
                 {
                     dprintf (2, ("Reducing new allocation based on fragmentation"));
                     new_allocation = min (new_allocation,
                                           max (min_gc_size, (max_size/3)));
+                    new_allocation_frag = new_allocation;
                 }
+
+                dprintf (3333, ("h%d surv: %Id, limit: %Id linear: %Id, frag: %Id",
+                    heap_number, new_allocation_surv, new_allocation_limit, new_allocation_linear, new_allocation_frag));
             }
         }
 
@@ -32632,9 +32649,12 @@ size_t gc_heap::desired_new_allocation (dynamic_data* dd,
         dd_surv (dd) = cst;
 
 #ifdef SIMPLE_DPRINTF
-        dprintf (1, ("h%d g%d surv: %Id current: %Id alloc: %Id (%d%%) f: %d%% new-size: %Id new-alloc: %Id",
-                    heap_number, gen_number, out, current_size, (dd_desired_allocation (dd) - dd_gc_new_allocation (dd)),
-                    (int)(cst*100), (int)(f*100), current_size + new_allocation, new_allocation));
+        if (gen_number == 0)
+        {
+            dprintf (3333, ("h%d g%d surv: %Id current: %Id alloc: %Id (%d%%) f: %d%% new-size: %Id new-alloc: %Id",
+                        heap_number, gen_number, out, current_size, (dd_desired_allocation (dd) - dd_gc_new_allocation (dd)),
+                        (int)(cst*100), (int)(f*100), current_size + new_allocation, new_allocation));
+        }
 #else
         dprintf (1,("gen: %d in: %Id out: %Id ", gen_number, generation_allocation_size (generation_of (gen_number)), out));
         dprintf (1,("current: %Id alloc: %Id ", current_size, (dd_desired_allocation (dd) - dd_gc_new_allocation (dd))));
@@ -37892,7 +37912,7 @@ void gc_heap::do_pre_gc()
 #ifdef TRACE_GC
     size_t total_allocated_since_last_gc = get_total_allocated_since_last_gc();
 #ifdef BACKGROUND_GC
-    dprintf (1, ("*GC* %d(gen0:%d)(%d)(alloc: %Id)(%s)(%d)",
+    dprintf (3333, ("*GC* %d(gen0:%d)(%d)(alloc: %Id)(%s)(%d)",
         VolatileLoad(&settings.gc_index),
         dd_collection_count (hp->dynamic_data_of (0)),
         settings.condemned_generation,
